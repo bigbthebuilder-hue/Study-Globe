@@ -79,6 +79,10 @@ main { display: grid; gap: 14px; }
 }
 
 .hero-panel p { margin: 0; color: var(--muted); line-height: 1.45; }
+.count-line {
+  color: var(--green);
+  font-weight: 900;
+}
 .eyebrow { color: var(--teal); font-weight: 900; text-transform: uppercase; letter-spacing: 0; font-size: 0.76rem; }
 
 .quick-grid, .stats-grid {

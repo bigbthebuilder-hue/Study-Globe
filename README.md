@@ -2,22 +2,22 @@
 
 Personal study workspace prototype with local storage only.
 
-## v2 structure
+## v2 wording
 
-- Projects are study workspaces.
-- Subjects are reusable things being studied.
-- Study Material includes notes, pasted text, images, scriptures/references, timeline entries, research questions, and personal takeaways.
-- Search finds projects, subjects, study material, tags, and scripture/reference fields.
-- Connections show linked projects, subjects, study material, shared tags, and shared scripture/reference links.
+- Studies are study workspaces.
+- Topics are reusable things being studied.
+- Notes include written notes, pasted text, images, scriptures/references, timeline entries, research questions, and personal takeaways.
+- Search finds studies, topics, notes, tags, and scripture/reference fields.
+- Links show how studies, topics, notes, tags, and scriptures relate.
 
 ## Data migration
 
 Study Globe v2 keeps the existing `study-globe-v1-data` local storage key and migrates old v1.3 data in the browser:
 
-- Old Topics become Subjects.
+- Old Topics become Topics.
 - Old Topic category and tags carry over.
-- Old study items become Study Material linked to the migrated Subject by ID.
-- Linked records are shared by ID, so edits update everywhere they are used.
+- Old study items become Notes attached to the migrated Topic.
+- Shared records still update everywhere they are used.
 
 ## Boundaries
 

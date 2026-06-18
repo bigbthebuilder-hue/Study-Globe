@@ -57,6 +57,7 @@ const titleOf = (material) => material.title || material.body?.slice(0, 48) || m
 const byRecent = (a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0);
 const unique = (ids = []) => [...new Set(ids.filter(Boolean))];
 const includes = (value, query) => norm(value).includes(norm(query));
+const plural = (word, count) => `${word}${count === 1 ? '' : 's'}`;
 
 function seedData() {
   return {
@@ -97,7 +98,7 @@ function migrateData(rawData) {
   const subjects = (rawData.topics || []).map((topic) => ({
     id: topic.id || uid(),
     type: 'Topic / Free Study',
-    name: topic.name || 'Untitled Subject',
+    name: topic.name || 'Untitled Topic',
     categoryId: topic.categoryId || '',
     description: topic.description || '',
     tagIds: topic.tagIds || [],
@@ -215,7 +216,7 @@ function App() {
         updatedAt: now(),
       };
       return linkNewProject(current, { ...project, tagIds }, tags, linkContext);
-    }, 'Project saved');
+    }, 'Study saved');
     setActiveProjectId(id);
     setTab('projects');
     return id;
@@ -241,7 +242,7 @@ function App() {
         updatedAt: now(),
       };
       return linkNewSubject(current, subject, tags, linkContext);
-    }, 'Subject saved');
+    }, 'Topic saved');
     setActiveSubjectId(id);
     setTab('subjects');
     return id;
@@ -267,14 +268,14 @@ function App() {
         updatedAt: now(),
       };
       return linkNewMaterial(current, material, tags, linkContext);
-    }, 'Study Material saved');
+    }, 'Note saved');
     setActiveMaterialId(id);
     return id;
   };
 
   const linkExisting = (kind, id, linkContext = context) => {
     if (!linkContext || !id) return;
-    updateData((current) => linkExistingRecord(current, kind, id, linkContext), 'Linked');
+    updateData((current) => linkExistingRecord(current, kind, id, linkContext), 'Added');
   };
 
   const updateProject = (id, values) => updateData((current) => {
@@ -292,7 +293,7 @@ function App() {
         updatedAt: now(),
       } : project),
     };
-  }, 'Project updated');
+  }, 'Study updated');
 
   const updateSubject = (id, values) => updateData((current) => {
     const { tags, tagIds } = ensureTags(values.tags, current);
@@ -314,7 +315,7 @@ function App() {
         updatedAt: now(),
       } : subject),
     };
-  }, 'Subject updated everywhere');
+  }, 'Topic updated everywhere');
 
   const updateMaterial = (id, values) => updateData((current) => {
     const { tags, tagIds } = ensureTags(values.tags, current);
@@ -336,14 +337,14 @@ function App() {
         updatedAt: now(),
       } : material),
     };
-  }, 'Study Material updated everywhere');
+  }, 'Note updated everywhere');
 
   const deleteProject = (id) => updateData((current) => ({
     ...current,
     projects: current.projects.filter((project) => project.id !== id),
     subjects: current.subjects.map((subject) => ({ ...subject, linkedProjectIds: (subject.linkedProjectIds || []).filter((projectId) => projectId !== id) })),
     materials: current.materials.map((material) => ({ ...material, linkedProjectIds: (material.linkedProjectIds || []).filter((projectId) => projectId !== id) })),
-  }), 'Project deleted');
+  }), 'Study deleted');
 
   const deleteSubject = (id) => updateData((current) => ({
     ...current,
@@ -352,14 +353,14 @@ function App() {
       .filter((subject) => subject.id !== id)
       .map((subject) => ({ ...subject, linkedSubjectIds: (subject.linkedSubjectIds || []).filter((subjectId) => subjectId !== id) })),
     materials: current.materials.map((material) => ({ ...material, linkedSubjectIds: (material.linkedSubjectIds || []).filter((subjectId) => subjectId !== id) })),
-  }), 'Subject deleted');
+  }), 'Topic deleted');
 
   const deleteMaterial = (id) => updateData((current) => ({
     ...current,
     projects: current.projects.map((project) => ({ ...project, materialIds: (project.materialIds || []).filter((materialId) => materialId !== id) })),
     subjects: current.subjects.map((subject) => ({ ...subject, materialIds: (subject.materialIds || []).filter((materialId) => materialId !== id) })),
     materials: current.materials.filter((material) => material.id !== id),
-  }), 'Study Material deleted');
+  }), 'Note deleted');
 
   const addCategory = (name) => {
     if (!name.trim()) return;
@@ -447,10 +448,10 @@ function App() {
 
       <nav className="bottom-nav">
         <NavButton label="Home" icon={<Home />} active={tab === 'home'} onClick={goHome} />
-        <NavButton label="Projects" icon={<FolderOpen />} active={tab === 'projects'} onClick={() => setTab('projects')} />
-        <NavButton label="Subjects" icon={<BookOpen />} active={tab === 'subjects'} onClick={() => setTab('subjects')} />
+        <NavButton label="Studies" icon={<FolderOpen />} active={tab === 'projects'} onClick={() => setTab('projects')} />
+        <NavButton label="Topics" icon={<BookOpen />} active={tab === 'subjects'} onClick={() => setTab('subjects')} />
         <NavButton label="Search" icon={<Search />} active={tab === 'search'} onClick={() => setTab('search')} />
-        <NavButton label="Connections" icon={<Network />} active={tab === 'connections'} onClick={() => setTab('connections')} />
+        <NavButton label="Links" icon={<Network />} active={tab === 'connections'} onClick={() => setTab('connections')} />
       </nav>
     </div>
   );
@@ -553,41 +554,32 @@ function HomeScreen({ data, refs, usage, setTab, openCreate, setActiveProjectId,
   const recentSubjects = [...data.subjects].sort(byRecent).slice(0, 4);
   const recentMaterials = [...data.materials].sort(byRecent).slice(0, 4);
   const activeProjects = [...data.projects].sort(byRecent).slice(0, 4);
-  const inProgress = data.subjects.filter((subject) => !subject.progressStatus || subject.progressStatus !== 'Well Developed').sort(byRecent).slice(0, 4);
+  const counts = `${data.projects.length} ${plural('study', data.projects.length)} · ${data.subjects.length} ${plural('topic', data.subjects.length)} · ${data.materials.length} ${plural('note', data.materials.length)} · ${data.tags.length} ${plural('tag', data.tags.length)}`;
 
   return <section className="screen-stack">
     <div className="hero-panel">
       <div>
-        <p className="eyebrow">Local storage only</p>
+        <p className="eyebrow">My study</p>
         <h1>Study Globe</h1>
-        <p>Projects are workspaces. Subjects and Study Material are shared records that stay linked by ID.</p>
+        <p className="count-line">{counts}</p>
       </div>
       <div className="quick-grid">
-        <button className="primary-action" onClick={() => openCreate('project')}><CirclePlus /> Find or Create Project</button>
-        <button className="primary-action" onClick={() => openCreate('subject')}><BookOpen /> Find or Create Subject</button>
-        <button className="secondary-action" onClick={() => openCreate('material')}><FileText /> Find or Create Study Material</button>
+        <button className="primary-action" onClick={() => openCreate('project')}><CirclePlus /> Start Study</button>
+        <button className="primary-action" onClick={() => openCreate('subject')}><BookOpen /> Add Topic</button>
+        <button className="secondary-action" onClick={() => openCreate('material')}><FileText /> Add Note</button>
         <button className="secondary-action" onClick={() => setTab('search')}><Search /> Search My Study</button>
         <button className="secondary-action" onClick={openSettings}><Settings /> Settings</button>
         <button className="secondary-action" onClick={openSettings}><Download /> Backup / Restore</button>
       </div>
     </div>
-    <div className="stats-grid">
-      <Stat label="Projects" value={data.projects.length} />
-      <Stat label="Subjects" value={data.subjects.length} />
-      <Stat label="Study Material" value={data.materials.length} />
-      <Stat label="Tags" value={data.tags.length} />
-    </div>
-    <Panel title="Active Projects" icon={<FolderOpen />}>
-      {activeProjects.length ? activeProjects.map((project) => <ProjectCard key={project.id} project={project} refs={refs} onOpen={() => { setActiveProjectId(project.id); setTab('projects'); }} />) : <Empty text="No projects yet." />}
+    <Panel title="Continue Studying / Active Studies" icon={<FolderOpen />}>
+      {activeProjects.length ? activeProjects.map((project) => <ProjectCard key={project.id} project={project} refs={refs} onOpen={() => { setActiveProjectId(project.id); setTab('projects'); }} />) : <Empty text="Start a study when you are ready." />}
     </Panel>
-    <Panel title="Recent Subjects" icon={<BookOpen />}>
-      {recentSubjects.length ? recentSubjects.map((subject) => <SubjectCard key={subject.id} subject={subject} refs={refs} usage={usage} onOpen={() => { setActiveSubjectId(subject.id); setTab('subjects'); }} />) : <Empty text="Old Topics will appear here as Subjects after migration." />}
+    <Panel title="Recent Topics" icon={<BookOpen />}>
+      {recentSubjects.length ? recentSubjects.map((subject) => <SubjectCard key={subject.id} subject={subject} refs={refs} usage={usage} onOpen={() => { setActiveSubjectId(subject.id); setTab('subjects'); }} />) : <Empty text="Add a topic to begin." />}
     </Panel>
-    <Panel title="Recent Study Material" icon={<FileText />}>
-      {recentMaterials.length ? recentMaterials.map((material) => <MaterialCard key={material.id} material={material} refs={refs} usage={usage} onOpen={() => setActiveMaterialId(material.id)} />) : <Empty text="Notes, images, scriptures, questions, and timeline entries appear here." />}
-    </Panel>
-    <Panel title="Topics in Progress" icon={<Boxes />}>
-      {inProgress.length ? inProgress.map((subject) => <SubjectCard key={subject.id} subject={subject} refs={refs} usage={usage} onOpen={() => { setActiveSubjectId(subject.id); setTab('subjects'); }} />) : <Empty text="No topics in progress yet." />}
+    <Panel title="Recent Notes" icon={<FileText />}>
+      {recentMaterials.length ? recentMaterials.map((material) => <MaterialCard key={material.id} material={material} refs={refs} usage={usage} onOpen={() => setActiveMaterialId(material.id)} />) : <Empty text="Add a note, question, reference, or takeaway." />}
     </Panel>
   </section>;
 }
@@ -600,15 +592,15 @@ function ProjectsScreen(props) {
 
   return <section className="split-layout">
     <aside className="panel list-panel">
-      <div className="panel-head"><h2><FolderOpen size={20} />Projects</h2></div>
-      <button className="primary-action" onClick={() => openCreate('project')}><CirclePlus /> Find or Create Project</button>
-      {data.projects.length ? data.projects.map((project) => <ProjectCard key={project.id} project={project} refs={refs} selected={active?.id === project.id} onOpen={() => setActiveProjectId(project.id)} />) : <Empty text="Create a project workspace." />}
+      <div className="panel-head"><h2><FolderOpen size={20} />Studies</h2></div>
+      <button className="primary-action" onClick={() => openCreate('project')}><CirclePlus /> Start Study</button>
+      {data.projects.length ? data.projects.map((project) => <ProjectCard key={project.id} project={project} refs={refs} selected={active?.id === project.id} onOpen={() => setActiveProjectId(project.id)} />) : <Empty text="Start a study." />}
     </aside>
     <section className="panel detail-panel">
-      {!active ? <Empty text="Select or create a project." /> : editing ? (
+      {!active ? <Empty text="Select or start a study." /> : editing ? (
         <ProjectForm data={data} refs={refs} project={active} onSubmit={(values) => { updateProject(active.id, values); setEditing(false); }} onCancel={() => setEditing(false)} />
       ) : (
-        <ProjectDetail project={active} data={data} refs={refs} usage={usage} openCreate={openCreate} updateMaterial={props.updateMaterial} deleteMaterial={props.deleteMaterial} onEdit={() => setEditing(true)} onDelete={() => { if (confirm('Delete this project? Linked subjects and material will remain.')) deleteProject(active.id); }} setActiveSubjectId={setActiveSubjectId} />
+        <ProjectDetail project={active} data={data} refs={refs} usage={usage} openCreate={openCreate} updateMaterial={props.updateMaterial} deleteMaterial={props.deleteMaterial} onEdit={() => setEditing(true)} onDelete={() => { if (confirm('Delete this study? Topics and notes will remain.')) deleteProject(active.id); }} setActiveSubjectId={setActiveSubjectId} />
       )}
     </section>
   </section>;
@@ -617,20 +609,20 @@ function ProjectsScreen(props) {
 function ProjectDetail({ project, data, refs, usage, openCreate, updateMaterial, deleteMaterial, onEdit, onDelete, setActiveSubjectId }) {
   const subjects = (project.subjectIds || []).map((id) => refs.subjects[id]).filter(Boolean);
   const materials = (project.materialIds || []).map((id) => refs.materials[id]).filter(Boolean);
-  const timeline = materials.filter((item) => item.type === 'Timeline Entry' || item.type === 'Research Question');
+  const questions = materials.filter((item) => item.type === 'Research Question');
+  const noteMaterials = materials.filter((item) => item.type !== 'Research Question');
   return <>
-    <DetailHeader title={project.name} subtitle={`${subjects.length} subjects linked - ${materials.length} study materials linked`} onEdit={onEdit} onDelete={onDelete} />
-    {project.description && <p className="description">{project.description}</p>}
+    <DetailHeader title={project.name} subtitle={`${subjects.length} ${plural('topic', subjects.length)} · ${materials.length} ${plural('note', materials.length)}`} onEdit={onEdit} onDelete={onDelete} />
     <TagRow ids={project.tagIds} refs={refs} />
     <SectionTitle text="Overview" />
-    <p className="soft-box">This project links to shared Subjects and Study Material. Editing linked items updates them everywhere.</p>
-    <SectionTitle text="Linked Subjects" actions={<button className="small-action" onClick={() => openCreate('subject', { type: 'project', id: project.id })}><CirclePlus size={16} /> Link subject</button>} />
-    {subjects.length ? subjects.map((subject) => <SubjectCard key={subject.id} subject={subject} refs={refs} usage={usage} onOpen={() => setActiveSubjectId(subject.id)} />) : <Empty text="No linked subjects yet." />}
-    <SectionTitle text="Study Material" actions={<button className="small-action" onClick={() => openCreate('material', { type: 'project', id: project.id })}><CirclePlus size={16} /> Link material</button>} />
-    {materials.length ? materials.map((material) => <MaterialCard key={material.id} material={material} data={data} refs={refs} usage={usage} onUpdate={updateMaterial} onDelete={deleteMaterial} />) : <Empty text="No linked material yet." />}
-    <SectionTitle text="Timeline / Questions" />
-    {timeline.length ? timeline.map((material) => <MaterialCard key={material.id} material={material} data={data} refs={refs} usage={usage} onUpdate={updateMaterial} onDelete={deleteMaterial} />) : <Empty text="Timeline entries and research questions will collect here." />}
-    <SectionTitle text="Connections" />
+    <p className="soft-box">{project.description || 'A place to keep related topics and notes together.'}</p>
+    <SectionTitle text="Topics" actions={<button className="small-action" onClick={() => openCreate('subject', { type: 'project', id: project.id })}><CirclePlus size={16} /> Add Topic</button>} />
+    {subjects.length ? subjects.map((subject) => <SubjectCard key={subject.id} subject={subject} refs={refs} usage={usage} onOpen={() => setActiveSubjectId(subject.id)} />) : <Empty text="No topics yet." />}
+    <SectionTitle text="Notes" actions={<button className="small-action" onClick={() => openCreate('material', { type: 'project', id: project.id })}><CirclePlus size={16} /> Add Note</button>} />
+    {noteMaterials.length ? noteMaterials.map((material) => <MaterialCard key={material.id} material={material} data={data} refs={refs} usage={usage} onUpdate={updateMaterial} onDelete={deleteMaterial} />) : <Empty text="No notes yet." />}
+    <SectionTitle text="Questions" />
+    {questions.length ? questions.map((material) => <MaterialCard key={material.id} material={material} data={data} refs={refs} usage={usage} onUpdate={updateMaterial} onDelete={deleteMaterial} />) : <Empty text="Questions you save will collect here." />}
+    <SectionTitle text="Links" />
     <ConnectionList connections={buildConnections(data).filter((item) => item.ids.includes(project.id))} />
   </>;
 }
@@ -646,17 +638,17 @@ function SubjectsScreen(props) {
 
   return <section className="split-layout">
     <aside className="panel list-panel">
-      <div className="panel-head"><h2><BookOpen size={20} />Subjects</h2></div>
-      <button className="primary-action" onClick={() => openCreate('subject')}><CirclePlus /> Find or Create Subject</button>
-      <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search subjects" />
+      <div className="panel-head"><h2><BookOpen size={20} />Topics</h2></div>
+      <button className="primary-action" onClick={() => openCreate('subject')}><CirclePlus /> Add Topic</button>
+      <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search topics" />
       <div className="chip-row"><button className={filter === 'All' ? 'chip active' : 'chip'} onClick={() => setFilter('All')}>All</button>{SUBJECT_TYPES.map((type) => <button key={type} className={filter === type ? 'chip active' : 'chip'} onClick={() => setFilter(type)}>{type}</button>)}</div>
-      {subjects.length ? subjects.map((subject) => <SubjectCard key={subject.id} subject={subject} refs={refs} usage={usage} selected={active?.id === subject.id} onOpen={() => setActiveSubjectId(subject.id)} />) : <Empty text="No subjects match that filter." />}
+      {subjects.length ? subjects.map((subject) => <SubjectCard key={subject.id} subject={subject} refs={refs} usage={usage} selected={active?.id === subject.id} onOpen={() => setActiveSubjectId(subject.id)} />) : <Empty text="No topics match that filter." />}
     </aside>
     <section className="panel detail-panel">
-      {!active ? <Empty text="Select or create a subject." /> : editing ? (
+      {!active ? <Empty text="Select or add a topic." /> : editing ? (
         <SubjectForm data={data} refs={refs} subject={active} usage={usage} onSubmit={(values) => { updateSubject(active.id, values); setEditing(false); }} onCancel={() => setEditing(false)} />
       ) : (
-        <SubjectDetail subject={active} data={data} refs={refs} usage={usage} openCreate={openCreate} updateMaterial={props.updateMaterial} deleteMaterial={props.deleteMaterial} onEdit={() => setEditing(true)} onDelete={() => { if (confirm('Delete this subject? Linked projects and material will remain.')) deleteSubject(active.id); }} />
+        <SubjectDetail subject={active} data={data} refs={refs} usage={usage} openCreate={openCreate} updateMaterial={props.updateMaterial} deleteMaterial={props.deleteMaterial} onEdit={() => setEditing(true)} onDelete={() => { if (confirm('Delete this topic? Studies and notes will remain.')) deleteSubject(active.id); }} />
       )}
     </section>
   </section>;
@@ -680,13 +672,13 @@ function SubjectDetail({ subject, data, refs, usage, openCreate, updateMaterial,
       <summary>Template fields <ChevronDown size={16} /></summary>
       <FieldView fields={subject.fields} />
     </details>
-    <SectionTitle text="Linked Projects" />
-    {projects.length ? projects.map((project) => <ProjectCard key={project.id} project={project} refs={refs} />) : <Empty text="No linked projects yet." />}
-    <SectionTitle text="Linked Subjects" actions={<button className="small-action" onClick={() => openCreate('subject', { type: 'subject', id: subject.id })}><CirclePlus size={16} /> Link subject</button>} />
-    {linkedSubjects.length ? linkedSubjects.map((item) => <SubjectCard key={item.id} subject={item} refs={refs} usage={usage} />) : <Empty text="No linked subjects yet." />}
-    <SectionTitle text="Study Material" actions={<button className="small-action" onClick={() => openCreate('material', { type: 'subject', id: subject.id })}><CirclePlus size={16} /> Link material</button>} />
-    {materials.length ? materials.map((material) => <MaterialCard key={material.id} material={material} data={data} refs={refs} usage={usage} onUpdate={updateMaterial} onDelete={deleteMaterial} />) : <Empty text="No linked study material yet." />}
-    <SectionTitle text="Connections" />
+    <SectionTitle text="Used In" />
+    {projects.length ? projects.map((project) => <ProjectCard key={project.id} project={project} refs={refs} />) : <Empty text="Not used in a study yet." />}
+    <SectionTitle text="Related Topics" actions={<button className="small-action" onClick={() => openCreate('subject', { type: 'subject', id: subject.id })}><CirclePlus size={16} /> Add Topic</button>} />
+    {linkedSubjects.length ? linkedSubjects.map((item) => <SubjectCard key={item.id} subject={item} refs={refs} usage={usage} />) : <Empty text="No related topics yet." />}
+    <SectionTitle text="Notes" actions={<button className="small-action" onClick={() => openCreate('material', { type: 'subject', id: subject.id })}><CirclePlus size={16} /> Add Note</button>} />
+    {materials.length ? materials.map((material) => <MaterialCard key={material.id} material={material} data={data} refs={refs} usage={usage} onUpdate={updateMaterial} onDelete={deleteMaterial} />) : <Empty text="No notes yet." />}
+    <SectionTitle text="Links" />
     <ConnectionList connections={buildConnections(data).filter((item) => item.ids.includes(subject.id))} />
   </>;
 }
@@ -697,12 +689,12 @@ function SearchScreen({ data, refs, usage, setTab, setActiveProjectId, setActive
   return <section className="screen-stack">
     <div className="form-card search-card">
       <h2><Search size={22} />Search My Study</h2>
-      <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search projects, subjects, study material, tags, or scriptures" autoFocus />
+      <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search studies, topics, notes, tags, or scriptures" autoFocus />
     </div>
     {query ? <div className="result-groups">
-      <ResultGroup title="Projects" items={results.projects} render={(project) => <ProjectCard project={project} refs={refs} onOpen={() => { setActiveProjectId(project.id); setTab('projects'); }} />} />
-      <ResultGroup title="Subjects" items={results.subjects} render={(subject) => <SubjectCard subject={subject} refs={refs} usage={usage} onOpen={() => { setActiveSubjectId(subject.id); setTab('subjects'); }} />} />
-      <ResultGroup title="Study Material" items={results.materials} render={(material) => <MaterialCard material={material} refs={refs} usage={usage} />} />
+      <ResultGroup title="Studies" items={results.projects} render={(project) => <ProjectCard project={project} refs={refs} onOpen={() => { setActiveProjectId(project.id); setTab('projects'); }} />} />
+      <ResultGroup title="Topics" items={results.subjects} render={(subject) => <SubjectCard subject={subject} refs={refs} usage={usage} onOpen={() => { setActiveSubjectId(subject.id); setTab('subjects'); }} />} />
+      <ResultGroup title="Notes" items={results.materials} render={(material) => <MaterialCard material={material} refs={refs} usage={usage} />} />
       <ResultGroup title="Tags" items={results.tags} render={(tagItem) => <div className="plain-card"><Tag size={16} />{tagItem.name}</div>} />
     </div> : <Empty text="Live results appear while you type." />}
   </section>;
@@ -726,8 +718,8 @@ function ResultGroup({ title, items, render }) {
 function ConnectionsScreen({ data }) {
   const connections = buildConnections(data);
   return <section className="screen-stack">
-    <Panel title="Connections" icon={<Link2 />}>
-      {connections.length ? <ConnectionList connections={connections} /> : <Empty text="Links between projects, subjects, material, tags, and scriptures will appear here." />}
+    <Panel title="Links" icon={<Link2 />}>
+      {connections.length ? <ConnectionList connections={connections} /> : <Empty text="Links between studies, topics, notes, tags, and scriptures will appear here." />}
     </Panel>
   </section>;
 }
@@ -736,12 +728,12 @@ function buildConnections(data) {
   const refs = makeRefs(data);
   const list = [];
   data.projects.forEach((project) => {
-    (project.subjectIds || []).forEach((subjectId) => refs.subjects[subjectId] && list.push({ type: 'Project -> Subject', ids: [project.id, subjectId], title: `${project.name} -> ${refs.subjects[subjectId].name}` }));
-    (project.materialIds || []).forEach((materialId) => refs.materials[materialId] && list.push({ type: 'Project -> Study Material', ids: [project.id, materialId], title: `${project.name} -> ${titleOf(refs.materials[materialId])}` }));
+    (project.subjectIds || []).forEach((subjectId) => refs.subjects[subjectId] && list.push({ type: 'Study link', ids: [project.id, subjectId], title: `${project.name} - ${refs.subjects[subjectId].name}` }));
+    (project.materialIds || []).forEach((materialId) => refs.materials[materialId] && list.push({ type: 'Note link', ids: [project.id, materialId], title: `${project.name} - ${titleOf(refs.materials[materialId])}` }));
   });
   data.subjects.forEach((subject) => {
-    (subject.linkedSubjectIds || []).forEach((subjectId) => refs.subjects[subjectId] && list.push({ type: 'Subject -> Subject', ids: [subject.id, subjectId], title: `${subject.name} -> ${refs.subjects[subjectId].name}` }));
-    (subject.materialIds || []).forEach((materialId) => refs.materials[materialId] && list.push({ type: 'Subject -> Study Material', ids: [subject.id, materialId], title: `${subject.name} -> ${titleOf(refs.materials[materialId])}` }));
+    (subject.linkedSubjectIds || []).forEach((subjectId) => refs.subjects[subjectId] && list.push({ type: 'Related topic', ids: [subject.id, subjectId], title: `${subject.name} - ${refs.subjects[subjectId].name}` }));
+    (subject.materialIds || []).forEach((materialId) => refs.materials[materialId] && list.push({ type: 'Note link', ids: [subject.id, materialId], title: `${subject.name} - ${titleOf(refs.materials[materialId])}` }));
   });
   data.tags.forEach((tagItem) => {
     const holders = [
@@ -766,7 +758,7 @@ function buildConnections(data) {
 }
 
 function ConnectionList({ connections }) {
-  if (!connections.length) return <Empty text="No connections yet." />;
+  if (!connections.length) return <Empty text="No links yet." />;
   return <div className="connection-list">{connections.map((item, index) => <article className="connection-card" key={`${item.type}-${item.title}-${index}`}><strong>{item.title}</strong><span>{item.type}</span>{item.detail && <p>{item.detail}</p>}</article>)}</div>;
 }
 
@@ -777,13 +769,13 @@ function ProjectForm({ data, refs, project, onSubmit, onCancel }) {
   const [subjectIds, setSubjectIds] = useState(project?.subjectIds || []);
   const [materialIds, setMaterialIds] = useState(project?.materialIds || []);
   return <form className="form-card" onSubmit={(event) => { event.preventDefault(); if (!name.trim()) return; onSubmit({ name, description, tags, subjectIds, materialIds }); }}>
-    <h2><FolderOpen size={22} />{project ? 'Edit Project' : 'Find or Create Project'}</h2>
-    <label>Project name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Example: First-century travel" required /></label>
+    <h2><FolderOpen size={22} />{project ? 'Edit Study' : 'Start Study'}</h2>
+    <label>Study name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Example: First-century travel" required /></label>
     <label>Description<textarea value={description} onChange={(event) => setDescription(event.target.value)} /></label>
-    <CheckList title="Link Subjects by ID" items={data.subjects} selected={subjectIds} setSelected={setSubjectIds} label={(item) => `${item.name} - ${item.type}`} />
-    <CheckList title="Link Study Material by ID" items={data.materials} selected={materialIds} setSelected={setMaterialIds} label={titleOf} />
+    <CheckList title="Topics" items={data.subjects} selected={subjectIds} setSelected={setSubjectIds} label={(item) => `${item.name} - ${item.type}`} />
+    <CheckList title="Notes" items={data.materials} selected={materialIds} setSelected={setMaterialIds} label={titleOf} />
     <label>Tags<input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="travel, maps, context" /></label>
-    <FormActions onCancel={onCancel} submit={project ? 'Save Project' : 'Create Project'} />
+    <FormActions onCancel={onCancel} submit={project ? 'Save Study' : 'Start Study'} />
   </form>;
 }
 
@@ -793,16 +785,16 @@ function SubjectCreateFlow({ data, refs, usage, onCreate, onLink, context, onCan
   const matches = data.subjects.filter((subject) => subject.type === type && name.trim() && includes(subject.name, name)).slice(0, 6);
   return <section className="screen-stack">
     <div className="form-card">
-      <h2><BookOpen size={22} />Find or Create Subject</h2>
-      <label>Subject type<select value={type} onChange={(event) => setType(event.target.value)}>{SUBJECT_TYPES.map((item) => <option key={item}>{item}</option>)}</select></label>
-      <label>Subject name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Type a name, like Peter or Petra" autoFocus /></label>
+      <h2><BookOpen size={22} />Add Topic</h2>
+      <label>Topic type<select value={type} onChange={(event) => setType(event.target.value)}>{SUBJECT_TYPES.map((item) => <option key={item}>{item}</option>)}</select></label>
+      <label>Topic name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Type a name, like Peter or Petra" autoFocus /></label>
       {matches.length > 0 && <div className="match-list">{matches.map((subject) => <button type="button" key={subject.id} onClick={() => { onLink('subject', subject.id, context); onCancel(); }}><strong>{subject.name}</strong><small>{subject.type} - {subjectUsageLabel(usage.subjects[subject.id])}</small></button>)}</div>}
     </div>
-    <SubjectForm data={data} refs={refs} usage={usage} subject={{ type, name }} onSubmit={(values) => { onCreate(values, context); onCancel(); }} onCancel={onCancel} submitText="Create New Subject" />
+    <SubjectForm data={data} refs={refs} usage={usage} subject={{ type, name }} onSubmit={(values) => { onCreate(values, context); onCancel(); }} onCancel={onCancel} submitText="Create Topic" />
   </section>;
 }
 
-function SubjectForm({ data, refs, subject = {}, usage, onSubmit, onCancel, submitText = 'Save Subject' }) {
+function SubjectForm({ data, refs, subject = {}, usage, onSubmit, onCancel, submitText = 'Save Topic' }) {
   const [type, setType] = useState(subject.type || SUBJECT_TYPES[0]);
   const [name, setName] = useState(subject.name || '');
   const [categoryId, setCategoryId] = useState(subject.categoryId || '');
@@ -822,7 +814,7 @@ function SubjectForm({ data, refs, subject = {}, usage, onSubmit, onCancel, subm
   });
   const shared = subject.id && isSharedSubject(usage.subjects[subject.id]);
   return <form className="form-card" onSubmit={(event) => { event.preventDefault(); if (!type || !name.trim()) return; onSubmit({ type, name, categoryId, description, tags, linkedProjectIds, linkedSubjectIds, materialIds, fields, progressStatus }); }}>
-    <h2><BookOpen size={22} />{subject.id ? 'Edit Subject' : 'Create Subject'}</h2>
+    <h2><BookOpen size={22} />{subject.id ? 'Edit Topic' : 'Create Topic'}</h2>
     {shared && <SharedNotice />}
     <label>Type<select value={type} onChange={(event) => setType(event.target.value)}>{SUBJECT_TYPES.map((item) => <option key={item}>{item}</option>)}</select></label>
     <label>Name<input value={name} onChange={(event) => setName(event.target.value)} required /></label>
@@ -837,9 +829,9 @@ function SubjectForm({ data, refs, subject = {}, usage, onSubmit, onCancel, subm
       <label>Questions<textarea value={fields.questions} onChange={(event) => setFields({ ...fields, questions: event.target.value })} /></label>
       <label>Notes<textarea value={fields.notes} onChange={(event) => setFields({ ...fields, notes: event.target.value })} /></label>
       <label>Progress<select value={progressStatus} onChange={(event) => setProgressStatus(event.target.value)}><option value="">In progress</option><option>Not Started</option><option>More Research Needed</option><option>Partly Supported</option><option>Well Developed</option></select></label>
-      <CheckList title="Linked Projects" items={data.projects} selected={linkedProjectIds} setSelected={setLinkedProjectIds} label={(item) => item.name} />
-      <CheckList title="Linked Subjects" items={data.subjects.filter((item) => item.id !== subject.id)} selected={linkedSubjectIds} setSelected={setLinkedSubjectIds} label={(item) => `${item.name} - ${item.type}`} />
-      <CheckList title="Study Material" items={data.materials} selected={materialIds} setSelected={setMaterialIds} label={titleOf} />
+      <CheckList title="Used In" items={data.projects} selected={linkedProjectIds} setSelected={setLinkedProjectIds} label={(item) => item.name} />
+      <CheckList title="Related Topics" items={data.subjects.filter((item) => item.id !== subject.id)} selected={linkedSubjectIds} setSelected={setLinkedSubjectIds} label={(item) => `${item.name} - ${item.type}`} />
+      <CheckList title="Notes" items={data.materials} selected={materialIds} setSelected={setMaterialIds} label={titleOf} />
       <label>Tags<input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="faith, family, geography" /></label>
     </details>
     <FormActions onCancel={onCancel} submit={submitText} />
@@ -851,15 +843,15 @@ function MaterialFinder({ data, refs, usage, onCreate, onLink, context, onCancel
   const matches = data.materials.filter((material) => query.trim() && includes(`${material.title} ${material.body} ${material.scriptureRefs}`, query)).slice(0, 6);
   return <section className="screen-stack">
     <div className="form-card">
-      <h2><FileText size={22} />Find or Create Study Material</h2>
-      <label>Find existing material<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search title, note text, or scripture" autoFocus /></label>
+      <h2><FileText size={22} />Add Note</h2>
+      <label>Find existing note<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search title, note text, or scripture" autoFocus /></label>
       {matches.length > 0 && <div className="match-list">{matches.map((material) => <button type="button" key={material.id} onClick={() => { onLink('material', material.id, context); onCancel(); }}><strong>{titleOf(material)}</strong><small>{material.type} - {materialUsageLabel(usage.materials[material.id])}</small></button>)}</div>}
     </div>
-    <MaterialForm data={data} refs={refs} usage={usage} onSubmit={(values) => { onCreate(values, context); onCancel(); }} onCancel={onCancel} submitText="Create New Study Material" />
+    <MaterialForm data={data} refs={refs} usage={usage} onSubmit={(values) => { onCreate(values, context); onCancel(); }} onCancel={onCancel} submitText="Create Note" />
   </section>;
 }
 
-function MaterialForm({ data, refs, usage, material = {}, onSubmit, onCancel, submitText = 'Save Study Material' }) {
+function MaterialForm({ data, refs, usage, material = {}, onSubmit, onCancel, submitText = 'Save Note' }) {
   const [type, setType] = useState(material.type || 'Note');
   const [title, setTitle] = useState(material.title || '');
   const [body, setBody] = useState(material.body || '');
@@ -878,9 +870,9 @@ function MaterialForm({ data, refs, usage, material = {}, onSubmit, onCancel, su
     reader.readAsDataURL(file);
   };
   return <form className="form-card" onSubmit={(event) => { event.preventDefault(); if (!title.trim()) return; onSubmit({ type, title, body, imageData, source, scriptureRefs, personalTakeaway, tags, linkedProjectIds, linkedSubjectIds }); }}>
-    <h2><FileText size={22} />{material.id ? 'Edit Study Material' : 'Create Study Material'}</h2>
+    <h2><FileText size={22} />{material.id ? 'Edit Note' : 'Create Note'}</h2>
     {shared && <SharedNotice />}
-    <label>Material type<select value={type} onChange={(event) => setType(event.target.value)}>{MATERIAL_TYPES.map((item) => <option key={item}>{item}</option>)}</select></label>
+    <label>Note type<select value={type} onChange={(event) => setType(event.target.value)}>{MATERIAL_TYPES.map((item) => <option key={item}>{item}</option>)}</select></label>
     <label>Title<input value={title} onChange={(event) => setTitle(event.target.value)} required /></label>
     {type === 'Image' && <label>Image<div className="image-dropzone" onPaste={(event) => { const file = [...(event.clipboardData?.files || [])].find((entry) => entry.type.startsWith('image/')); if (file) { event.preventDefault(); readImage(file); } }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); readImage([...(event.dataTransfer?.files || [])].find((entry) => entry.type.startsWith('image/'))); }} tabIndex={0}>
       <ImagePlus size={28} /><strong>Paste, drop, or choose an image</strong><input type="file" accept="image/*" onChange={(event) => readImage(event.target.files?.[0])} />{imageData && <img className="image-preview" src={imageData} alt="Selected preview" />}
@@ -891,8 +883,8 @@ function MaterialForm({ data, refs, usage, material = {}, onSubmit, onCancel, su
       <label>Scripture / references<input value={scriptureRefs} onChange={(event) => setScriptureRefs(event.target.value)} placeholder="James 1:2-4, Hebrews 11" /></label>
       <label>Personal takeaway<textarea value={personalTakeaway} onChange={(event) => setPersonalTakeaway(event.target.value)} /></label>
       <label>Source<input value={source} onChange={(event) => setSource(event.target.value)} /></label>
-      <CheckList title="Linked Projects" items={data.projects} selected={linkedProjectIds} setSelected={setLinkedProjectIds} label={(item) => item.name} />
-      <CheckList title="Linked Subjects" items={data.subjects} selected={linkedSubjectIds} setSelected={setLinkedSubjectIds} label={(item) => `${item.name} - ${item.type}`} />
+      <CheckList title="Used In" items={data.projects} selected={linkedProjectIds} setSelected={setLinkedProjectIds} label={(item) => item.name} />
+      <CheckList title="Topics" items={data.subjects} selected={linkedSubjectIds} setSelected={setLinkedSubjectIds} label={(item) => `${item.name} - ${item.type}`} />
       <label>Tags<input value={tags} onChange={(event) => setTags(event.target.value)} /></label>
     </details>
     <FormActions onCancel={onCancel} submit={submitText} />
@@ -917,7 +909,9 @@ function SectionTitle({ text, actions }) {
 }
 
 function ProjectCard({ project, refs, selected, onOpen }) {
-  const content = <><div><strong>{project.name}</strong><small>{(project.subjectIds || []).length} subjects - {(project.materialIds || []).length} study materials</small></div><TagRow ids={project.tagIds} refs={refs} compact /></>;
+  const topicCount = (project.subjectIds || []).length;
+  const noteCount = (project.materialIds || []).length;
+  const content = <><div><strong>{project.name}</strong><small>{topicCount} {plural('topic', topicCount)} · {noteCount} {plural('note', noteCount)}</small></div><TagRow ids={project.tagIds} refs={refs} compact /></>;
   return onOpen ? <button className={`entity-card ${selected ? 'selected' : ''}`} onClick={onOpen}>{content}</button> : <article className="entity-card">{content}</article>;
 }
 
@@ -946,7 +940,7 @@ function MaterialCard({ material, data, refs, usage, onOpen, onUpdate, onDelete 
       <div><strong>{titleOf(material)}</strong><small>{material.type} - {materialUsageLabel(usage.materials[material.id])}</small></div>
       {onUpdate && <div className="card-actions">
         <button className="icon-button neutral" onClick={() => setEditing(true)} title="Edit"><Pencil size={18} /></button>
-        <button className="icon-button danger-icon" onClick={() => { if (confirm('Delete this study material? Links to it will be removed.')) onDelete(material.id); }} title="Delete"><Trash2 size={18} /></button>
+        <button className="icon-button danger-icon" onClick={() => { if (confirm('Delete this note? It will be removed from any studies or topics using it.')) onDelete(material.id); }} title="Delete"><Trash2 size={18} /></button>
       </div>}
     </div>
     {material.imageData && <img className="saved-image" src={material.imageData} alt={titleOf(material)} />}
@@ -970,20 +964,20 @@ function TagRow({ ids = [], refs, compact = false }) {
 }
 
 function SharedNotice() {
-  return <p className="shared-notice">This item is linked in multiple places. Changes will appear everywhere.</p>;
+  return <p className="shared-notice">Changes update everywhere this is used.</p>;
 }
 
 function subjectUsageLabel(usage = {}) {
   const total = (usage.projects || 0) + (usage.subjects || 0) + (usage.materials || 0);
-  if (usage.projects) return `Linked to ${usage.projects} project${usage.projects === 1 ? '' : 's'}`;
-  if (usage.subjects) return `Linked to ${usage.subjects} subject${usage.subjects === 1 ? '' : 's'}`;
+  if (usage.projects) return `Used in ${usage.projects} ${plural('study', usage.projects)}`;
+  if (usage.subjects) return `${usage.subjects} related ${plural('topic', usage.subjects)}`;
   return `Used in ${total || 1} place${total === 1 ? '' : 's'}`;
 }
 
 function materialUsageLabel(usage = {}) {
   const total = (usage.projects || 0) + (usage.subjects || 0);
-  if (usage.projects) return `Linked to ${usage.projects} project${usage.projects === 1 ? '' : 's'}`;
-  if (usage.subjects) return `Linked to ${usage.subjects} subject${usage.subjects === 1 ? '' : 's'}`;
+  if (usage.projects) return `Used in ${usage.projects} ${plural('study', usage.projects)}`;
+  if (usage.subjects) return `Used with ${usage.subjects} ${plural('topic', usage.subjects)}`;
   return `Used in ${total || 1} place${total === 1 ? '' : 's'}`;
 }
 
