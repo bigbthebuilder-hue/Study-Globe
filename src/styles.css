@@ -200,6 +200,8 @@ button.entity-card:hover, .entity-card.selected {
   box-shadow: 0 0 0 3px rgba(35, 116, 131, 0.1);
 }
 
+.tappable-card { cursor: pointer; }
+
 .entity-card strong { display: block; font-size: 1rem; line-height: 1.25; }
 .entity-card small { display: block; color: var(--muted); margin-top: 3px; font-weight: 800; }
 .entity-card p { margin: 0; color: var(--muted); line-height: 1.45; white-space: pre-wrap; }
@@ -463,6 +465,27 @@ input:focus, textarea:focus, select:focus {
   gap: 12px;
 }
 
+.topic-add-button { margin: 0 0 12px; }
+
+.topic-add-panel, .duplicate-notice {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(35, 116, 131, 0.07);
+  padding: 13px;
+  margin: 10px 0 12px;
+}
+
+.topic-add-panel h3, .duplicate-notice strong {
+  margin: 0;
+  color: var(--green);
+}
+
+.compact-choice-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .match-list button {
   width: 100%;
   display: grid;
@@ -526,6 +549,17 @@ input:focus, textarea:focus, select:focus {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #eef1ed;
+}
+
+.image-preview-grid {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.image-preview-grid .image-preview {
+  height: 160px;
 }
 
 .meta { color: var(--muted); }
@@ -634,7 +668,7 @@ input:focus, textarea:focus, select:focus {
 @media (max-width: 560px) {
   .app-shell { padding: 8px 8px 88px; }
   .hero-panel, .panel, .form-card { padding: 13px; }
-  .quick-grid, .stats-grid, .action-row, .explore-grid, .choice-grid { grid-template-columns: 1fr; }
+  .quick-grid, .stats-grid, .action-row, .explore-grid, .choice-grid, .compact-choice-grid, .image-preview-grid { grid-template-columns: 1fr; }
   .section-title { align-items: stretch; flex-direction: column; }
   .small-action { width: 100%; justify-content: center; }
   .manage-row { align-items: stretch; flex-direction: column; }

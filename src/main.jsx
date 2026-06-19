@@ -59,6 +59,23 @@ const unique = (ids = []) => [...new Set(ids.filter(Boolean))];
 const includes = (value, query) => norm(value).includes(norm(query));
 const plural = (word, count) => `${word}${count === 1 ? '' : 's'}`;
 
+function readImageFile(file) {
+  return new Promise((resolve) => {
+    if (!file || !file.type?.startsWith('image/')) {
+      resolve(null);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => resolve({ id: uid(), name: file.name || 'Picture', dataUrl: reader.result });
+    reader.readAsDataURL(file);
+  });
+}
+
+async function readImageFiles(files) {
+  const images = await Promise.all([...(files || [])].filter((file) => file.type?.startsWith('image/')).map(readImageFile));
+  return images.filter(Boolean);
+}
+
 function seedData() {
   return {
     version: 2,
@@ -223,6 +240,13 @@ function App() {
   };
 
   const createSubject = (values, linkContext = context) => {
+    const existing = data.subjects.find((subject) => norm(subject.name) === norm(values.name) && subject.type === values.type);
+    if (existing) {
+      tell(`${existing.name} already exists.`);
+      setActiveSubjectId(existing.id);
+      setTab('subjects');
+      return existing.id;
+    }
     const id = uid();
     updateData((current) => {
       const { tags, tagIds } = ensureTags(values.tags, current);
@@ -443,7 +467,7 @@ function App() {
         {tab === 'search' && <SearchScreen {...commonProps} />}
         {tab === 'connections' && <ConnectionsScreen {...commonProps} />}
         {tab === 'create-project' && <ProjectForm data={data} refs={refs} onSubmit={createProject} onCancel={() => setTab('projects')} />}
-        {tab === 'create-subject' && <SubjectCreateFlow data={data} refs={refs} usage={usage} onCreate={createSubject} onLink={linkExisting} context={context} onCancel={() => setTab(context?.type === 'project' ? 'projects' : 'subjects')} />}
+        {tab === 'create-subject' && <SubjectCreateFlow data={data} refs={refs} usage={usage} onCreate={createSubject} createMaterial={createMaterial} onLink={linkExisting} context={context} setActiveSubjectId={setActiveSubjectId} setActiveMaterialId={setActiveMaterialId} setTab={setTab} onCancel={() => setTab(context?.type === 'project' ? 'projects' : 'subjects')} />}
         {tab === 'create-material' && <MaterialFinder data={data} refs={refs} usage={usage} onCreate={createMaterial} onLink={linkExisting} context={context} onCancel={() => setTab(context?.type === 'project' ? 'projects' : 'subjects')} />}
       </main>
 
@@ -621,7 +645,7 @@ function GuidedAddForm({ choice, data, refs, createProject, createSubject, creat
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [pictureAbout, setPictureAbout] = useState('');
-  const [imageData, setImageData] = useState('');
+  const [images, setImages] = useState([]);
   const [showPicture, setShowPicture] = useState(choice.pictureFirst || false);
   const [description, setDescription] = useState('');
   const [scriptureRefs, setScriptureRefs] = useState('');
@@ -630,12 +654,12 @@ function GuidedAddForm({ choice, data, refs, createProject, createSubject, creat
   const [subjectIds, setSubjectIds] = useState([]);
   const [categoryId, setCategoryId] = useState('');
   const [tags, setTags] = useState('');
+  const [duplicate, setDuplicate] = useState(null);
+  const [addingToDuplicate, setAddingToDuplicate] = useState(false);
 
-  const readImage = (file) => {
-    if (!file || !file.type?.startsWith('image/')) return;
-    const reader = new FileReader();
-    reader.onload = () => setImageData(reader.result);
-    reader.readAsDataURL(file);
+  const addImages = async (files) => {
+    const nextImages = await readImageFiles(files);
+    setImages((current) => [...current, ...nextImages]);
   };
 
   const save = (event) => {
@@ -650,6 +674,11 @@ function GuidedAddForm({ choice, data, refs, createProject, createSubject, creat
     }
 
     if (choice.subjectType) {
+      const existing = data.subjects.find((item) => norm(item.name) === norm(title) && item.type === choice.subjectType);
+      if (existing) {
+        setDuplicate(existing);
+        return;
+      }
       const id = createSubject({
         type: choice.subjectType,
         name: title,
@@ -661,12 +690,12 @@ function GuidedAddForm({ choice, data, refs, createProject, createSubject, creat
         materialIds: [],
         fields: { notes: body, scriptureRefs },
       });
-      if (imageData) {
+      images.forEach((image, index) => {
         createMaterial({
           type: 'Image',
-          title: `${title} picture`,
+          title: images.length > 1 ? `${title} picture ${index + 1}` : `${title} picture`,
           body: pictureAbout || title,
-          imageData,
+          imageData: image.dataUrl,
           source,
           scriptureRefs: '',
           personalTakeaway: '',
@@ -674,9 +703,40 @@ function GuidedAddForm({ choice, data, refs, createProject, createSubject, creat
           linkedProjectIds: projectIds,
           linkedSubjectIds: [id],
         }, { type: 'subject', id });
-      }
+      });
       setActiveSubjectId(id);
       setTab('subjects');
+      return;
+    }
+
+    if (choice.key === 'Picture' && images.length) {
+      let lastId = '';
+      images.forEach((image, index) => {
+        lastId = createMaterial({
+          type: 'Image',
+          title: images.length > 1 ? `${title} ${index + 1}` : title,
+          body: pictureAbout,
+          imageData: image.dataUrl,
+          source,
+          scriptureRefs: '',
+          personalTakeaway: '',
+          tags,
+          linkedProjectIds: projectIds,
+          linkedSubjectIds: subjectIds,
+        });
+      });
+      setActiveMaterialId(lastId);
+      if (subjectIds.length === 1) {
+        setActiveSubjectId(subjectIds[0]);
+        setTab('subjects');
+        return;
+      }
+      if (projectIds.length === 1) {
+        setActiveProjectId(projectIds[0]);
+        setTab('projects');
+        return;
+      }
+      setTab('material-detail');
       return;
     }
 
@@ -684,7 +744,7 @@ function GuidedAddForm({ choice, data, refs, createProject, createSubject, creat
       type: choice.materialType,
       title,
       body: choice.pictureFirst ? pictureAbout : body,
-      imageData,
+      imageData: images[0]?.dataUrl || '',
       source,
       scriptureRefs: choice.materialType === 'Scripture / Reference' ? title : scriptureRefs,
       personalTakeaway: '',
@@ -698,6 +758,24 @@ function GuidedAddForm({ choice, data, refs, createProject, createSubject, creat
 
   return <form className="guided-form" onSubmit={save}>
     <button className="text-button" type="button" onClick={onBack}>Change what I am adding</button>
+    {duplicate && <DuplicateTopicNotice
+      topic={duplicate}
+      onOpen={() => {
+        setActiveSubjectId(duplicate.id);
+        setTab('subjects');
+      }}
+      onAdd={() => setAddingToDuplicate(true)}
+    />}
+    {duplicate && addingToDuplicate && <AddToTopicPanel
+      topic={duplicate}
+      data={data}
+      createSubject={createSubject}
+      createMaterial={createMaterial}
+      setActiveSubjectId={setActiveSubjectId}
+      setActiveMaterialId={setActiveMaterialId}
+      setTab={setTab}
+      onClose={() => setAddingToDuplicate(false)}
+    />}
     <label>{choice.prompt}<input value={title} onChange={(event) => setTitle(event.target.value)} autoFocus required /></label>
 
     {choice.key === 'Picture' && <label>What is this picture about?<textarea value={pictureAbout} onChange={(event) => setPictureAbout(event.target.value)} /></label>}
@@ -706,7 +784,7 @@ function GuidedAddForm({ choice, data, refs, createProject, createSubject, creat
     {choice.project && <label>A few words about this study<textarea value={description} onChange={(event) => setDescription(event.target.value)} /></label>}
 
     {choice.picture && !showPicture && <button className="secondary-action" type="button" onClick={() => setShowPicture(true)}><ImagePlus /> Add picture</button>}
-    {showPicture && <PicturePicker imageData={imageData} readImage={readImage} />}
+    {showPicture && <PicturePicker images={images} addImages={addImages} multiple={choice.key === 'Picture'} />}
 
     <details className="template-box">
       <summary>More Details <ChevronDown size={16} /></summary>
@@ -726,22 +804,189 @@ function GuidedAddForm({ choice, data, refs, createProject, createSubject, creat
   </form>;
 }
 
-function PicturePicker({ imageData, readImage }) {
+function PicturePicker({ images = [], addImages, multiple = false }) {
   return <div className="image-dropzone" onPaste={(event) => {
-    const file = [...(event.clipboardData?.files || [])].find((entry) => entry.type.startsWith('image/'));
-    if (file) {
+    const files = [...(event.clipboardData?.files || [])].filter((entry) => entry.type.startsWith('image/'));
+    if (files.length) {
       event.preventDefault();
-      readImage(file);
+      addImages(multiple ? files : files.slice(0, 1));
     }
   }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
     event.preventDefault();
-    readImage([...(event.dataTransfer?.files || [])].find((entry) => entry.type.startsWith('image/')));
+    const files = [...(event.dataTransfer?.files || [])].filter((entry) => entry.type.startsWith('image/'));
+    addImages(multiple ? files : files.slice(0, 1));
   }} tabIndex={0}>
     <ImagePlus size={28} />
-    <strong>Add picture</strong>
-    <input type="file" accept="image/*" onChange={(event) => readImage(event.target.files?.[0])} />
-    {imageData && <img className="image-preview" src={imageData} alt="Selected preview" />}
+    <strong>{multiple ? 'Add pictures' : 'Add picture'}</strong>
+    <input type="file" accept="image/*" multiple={multiple} onChange={(event) => addImages(multiple ? event.target.files : [...(event.target.files || [])].slice(0, 1))} />
+    {images.length > 0 && <div className="image-preview-grid">{images.map((image) => <img key={image.id} className="image-preview" src={image.dataUrl} alt={image.name} />)}</div>}
   </div>;
+}
+
+function DuplicateTopicNotice({ topic, onOpen, onAdd }) {
+  return <div className="duplicate-notice">
+    <strong>{topic.name} already exists.</strong>
+    <div className="action-row">
+      <button className="secondary-action" type="button" onClick={onOpen}>Open {topic.name}</button>
+      <button className="primary-action" type="button" onClick={onAdd}>Add note or picture to {topic.name}</button>
+    </div>
+  </div>;
+}
+
+const TOPIC_ADD_CHOICES = ['Picture', 'Note', 'Scripture / Reference', 'Question', 'Related person/place/quality/event'];
+
+function AddToTopicPanel({ topic, data, createSubject, createMaterial, setActiveSubjectId, setActiveMaterialId, setTab, onClose }) {
+  const [choice, setChoice] = useState('');
+  return <div className="topic-add-panel">
+    {!choice ? <>
+      <h3>Add to {topic.name}</h3>
+      <div className="choice-grid compact-choice-grid">
+        {TOPIC_ADD_CHOICES.map((item) => <button key={item} className="choice-card" type="button" onClick={() => setChoice(item)}>{item}</button>)}
+      </div>
+      <button className="text-button" type="button" onClick={onClose}>Cancel</button>
+    </> : <AddToTopicForm
+      choice={choice}
+      topic={topic}
+      data={data}
+      createSubject={createSubject}
+      createMaterial={createMaterial}
+      setActiveSubjectId={setActiveSubjectId}
+      setActiveMaterialId={setActiveMaterialId}
+      setTab={setTab}
+      onBack={() => setChoice('')}
+      onClose={onClose}
+    />}
+  </div>;
+}
+
+function AddToTopicForm({ choice, topic, data, createSubject, createMaterial, setActiveSubjectId, setActiveMaterialId, setTab, onBack, onClose }) {
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [caption, setCaption] = useState('');
+  const [images, setImages] = useState([]);
+  const [relatedType, setRelatedType] = useState('Person');
+  const [duplicate, setDuplicate] = useState(null);
+
+  const addImages = async (files) => {
+    const nextImages = await readImageFiles(files);
+    setImages((current) => [...current, ...nextImages]);
+  };
+
+  const finishOnTopic = () => {
+    setActiveSubjectId(topic.id);
+    setTab('subjects');
+    onClose();
+  };
+
+  const save = (event) => {
+    event.preventDefault();
+
+    if (choice === 'Picture') {
+      if (!images.length) return;
+      let lastId = '';
+      images.forEach((image, index) => {
+        lastId = createMaterial({
+          type: 'Image',
+          title: images.length > 1 ? `${topic.name} picture ${index + 1}` : `${topic.name} picture`,
+          body: caption,
+          imageData: image.dataUrl,
+          source: '',
+          scriptureRefs: '',
+          personalTakeaway: '',
+          tags: '',
+          linkedProjectIds: [],
+          linkedSubjectIds: [topic.id],
+        }, { type: 'subject', id: topic.id });
+      });
+      setActiveMaterialId(lastId);
+      finishOnTopic();
+      return;
+    }
+
+    if (choice === 'Related person/place/quality/event') {
+      if (!title.trim()) return;
+      const existing = data.subjects.find((item) => norm(item.name) === norm(title) && item.type === relatedType);
+      if (existing) {
+        setDuplicate(existing);
+        return;
+      }
+      const id = createSubject({
+        type: relatedType,
+        name: title,
+        categoryId: '',
+        description: body,
+        tags: '',
+        linkedProjectIds: [],
+        linkedSubjectIds: [topic.id],
+        materialIds: [],
+        fields: {},
+      }, { type: 'subject', id: topic.id });
+      setActiveSubjectId(topic.id);
+      finishOnTopic();
+      return;
+    }
+
+    if (!title.trim()) return;
+    createMaterial({
+      type: choice === 'Question' ? 'Research Question' : choice,
+      title,
+      body,
+      imageData: '',
+      source: '',
+      scriptureRefs: choice === 'Scripture / Reference' ? title : '',
+      personalTakeaway: '',
+      tags: '',
+      linkedProjectIds: [],
+      linkedSubjectIds: [topic.id],
+    }, { type: 'subject', id: topic.id });
+    finishOnTopic();
+  };
+
+  return <form className="guided-form" onSubmit={save}>
+    <button className="text-button" type="button" onClick={onBack}>Back to choices</button>
+    {duplicate && <DuplicateTopicNotice
+      topic={duplicate}
+      onOpen={() => {
+        setActiveSubjectId(duplicate.id);
+        setTab('subjects');
+      }}
+      onAdd={() => {
+        setActiveSubjectId(duplicate.id);
+        setTab('subjects');
+      }}
+    />}
+
+    {choice === 'Picture' && <>
+      <label>Optional caption<textarea value={caption} onChange={(event) => setCaption(event.target.value)} /></label>
+      <PicturePicker images={images} addImages={addImages} multiple />
+    </>}
+
+    {choice === 'Note' && <>
+      <label>Note title<input value={title} onChange={(event) => setTitle(event.target.value)} required /></label>
+      <label>Note text<textarea value={body} onChange={(event) => setBody(event.target.value)} required /></label>
+    </>}
+
+    {choice === 'Scripture / Reference' && <>
+      <label>Scripture or reference<input value={title} onChange={(event) => setTitle(event.target.value)} required /></label>
+      <label>Notes<textarea value={body} onChange={(event) => setBody(event.target.value)} /></label>
+    </>}
+
+    {choice === 'Question' && <>
+      <label>Question<input value={title} onChange={(event) => setTitle(event.target.value)} required /></label>
+      <label>Details<textarea value={body} onChange={(event) => setBody(event.target.value)} /></label>
+    </>}
+
+    {choice === 'Related person/place/quality/event' && <>
+      <label>Type<select value={relatedType} onChange={(event) => setRelatedType(event.target.value)}><option>Person</option><option>Place</option><option>Quality</option><option>Event</option></select></label>
+      <label>Name<input value={title} onChange={(event) => setTitle(event.target.value)} required /></label>
+      <label>Notes<textarea value={body} onChange={(event) => setBody(event.target.value)} /></label>
+    </>}
+
+    <div className="action-row">
+      <button className="secondary-action" type="button" onClick={onBack}>Cancel</button>
+      <button className="primary-action" type="submit">Save to {topic.name}</button>
+    </div>
+  </form>;
 }
 
 function ExploreScreen({ data, refs, usage, setTab, setActiveProjectId, setActiveSubjectId, setActiveMaterialId }) {
@@ -847,13 +1092,29 @@ function SubjectsScreen(props) {
       {!active ? <Empty text="Select or add a topic." /> : editing ? (
         <SubjectForm data={data} refs={refs} subject={active} usage={usage} onSubmit={(values) => { updateSubject(active.id, values); setEditing(false); }} onCancel={() => setEditing(false)} />
       ) : (
-        <SubjectDetail subject={active} data={data} refs={refs} usage={usage} openCreate={openCreate} updateMaterial={props.updateMaterial} deleteMaterial={props.deleteMaterial} onEdit={() => setEditing(true)} onDelete={() => { if (confirm('Delete this topic? Studies and notes will remain.')) deleteSubject(active.id); }} />
+        <SubjectDetail
+          subject={active}
+          data={data}
+          refs={refs}
+          usage={usage}
+          openCreate={openCreate}
+          createSubject={props.createSubject}
+          createMaterial={props.createMaterial}
+          updateMaterial={props.updateMaterial}
+          deleteMaterial={props.deleteMaterial}
+          setActiveSubjectId={props.setActiveSubjectId}
+          setActiveMaterialId={props.setActiveMaterialId}
+          setTab={props.setTab}
+          onEdit={() => setEditing(true)}
+          onDelete={() => { if (confirm('Delete this topic? Studies and notes will remain.')) deleteSubject(active.id); }}
+        />
       )}
     </section>
   </section>;
 }
 
-function SubjectDetail({ subject, data, refs, usage, openCreate, updateMaterial, deleteMaterial, onEdit, onDelete }) {
+function SubjectDetail({ subject, data, refs, usage, openCreate, createSubject, createMaterial, updateMaterial, deleteMaterial, setActiveSubjectId, setActiveMaterialId, setTab, onEdit, onDelete }) {
+  const [adding, setAdding] = useState(false);
   const projects = data.projects.filter((project) => (project.subjectIds || []).includes(subject.id) || (subject.linkedProjectIds || []).includes(project.id));
   const linkedSubjects = unique([...(subject.linkedSubjectIds || []), ...data.subjects.filter((other) => (other.linkedSubjectIds || []).includes(subject.id)).map((other) => other.id)])
     .filter((id) => id !== subject.id).map((id) => refs.subjects[id]).filter(Boolean);
@@ -862,6 +1123,17 @@ function SubjectDetail({ subject, data, refs, usage, openCreate, updateMaterial,
 
   return <>
     <DetailHeader title={subject.name} subtitle={subject.type} badge={subjectUsageLabel(usage.subjects[subject.id])} onEdit={onEdit} onDelete={onDelete} />
+    <button className="primary-action topic-add-button" onClick={() => setAdding(true)}><CirclePlus /> Add to {subject.name}</button>
+    {adding && <AddToTopicPanel
+      topic={subject}
+      data={data}
+      createSubject={createSubject}
+      createMaterial={createMaterial}
+      setActiveSubjectId={setActiveSubjectId}
+      setActiveMaterialId={setActiveMaterialId}
+      setTab={setTab}
+      onClose={() => setAdding(false)}
+    />}
     {isSharedSubject(usage.subjects[subject.id]) && <SharedNotice />}
     {subject.description && <p className="description">{subject.description}</p>}
     <TagRow ids={subject.tagIds} refs={refs} />
@@ -875,8 +1147,8 @@ function SubjectDetail({ subject, data, refs, usage, openCreate, updateMaterial,
     {projects.length ? projects.map((project) => <ProjectCard key={project.id} project={project} refs={refs} />) : <Empty text="Not used in a study yet." />}
     <SectionTitle text="Related Topics" actions={<button className="small-action" onClick={() => openCreate('subject', { type: 'subject', id: subject.id })}><CirclePlus size={16} /> Add Topic</button>} />
     {linkedSubjects.length ? linkedSubjects.map((item) => <SubjectCard key={item.id} subject={item} refs={refs} usage={usage} />) : <Empty text="No related topics yet." />}
-    <SectionTitle text="Notes" actions={<button className="small-action" onClick={() => openCreate('material', { type: 'subject', id: subject.id })}><CirclePlus size={16} /> Add Note</button>} />
-    {materials.length ? materials.map((material) => <MaterialCard key={material.id} material={material} data={data} refs={refs} usage={usage} onUpdate={updateMaterial} onDelete={deleteMaterial} />) : <Empty text="No notes yet." />}
+    <SectionTitle text="Notes & Pictures" actions={<button className="small-action" onClick={() => setAdding(true)}><CirclePlus size={16} /> Add Note or Picture</button>} />
+    {materials.length ? materials.map((material) => <MaterialCard key={material.id} material={material} data={data} refs={refs} usage={usage} onUpdate={updateMaterial} onDelete={deleteMaterial} onOpen={() => { setActiveMaterialId(material.id); setTab('material-detail'); }} />) : <Empty text="No notes yet." />}
     <SectionTitle text="Links" />
     <ConnectionList connections={buildConnections(data).filter((item) => item.ids.includes(subject.id))} />
   </>;
@@ -978,15 +1250,35 @@ function ProjectForm({ data, refs, project, onSubmit, onCancel }) {
   </form>;
 }
 
-function SubjectCreateFlow({ data, refs, usage, onCreate, onLink, context, onCancel }) {
+function SubjectCreateFlow({ data, refs, usage, onCreate, createMaterial, onLink, context, setActiveSubjectId, setActiveMaterialId, setTab, onCancel }) {
   const [type, setType] = useState(SUBJECT_TYPES[0]);
   const [name, setName] = useState('');
+  const [addingToDuplicate, setAddingToDuplicate] = useState(false);
   const matches = data.subjects.filter((subject) => subject.type === type && name.trim() && includes(subject.name, name)).slice(0, 6);
+  const exact = data.subjects.find((subject) => subject.type === type && name.trim() && norm(subject.name) === norm(name));
   return <section className="screen-stack">
     <div className="form-card">
       <h2><BookOpen size={22} />Add Topic</h2>
       <label>Topic type<select value={type} onChange={(event) => setType(event.target.value)}>{SUBJECT_TYPES.map((item) => <option key={item}>{item}</option>)}</select></label>
       <label>Topic name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Type a name, like Peter or Petra" autoFocus /></label>
+      {exact && <DuplicateTopicNotice
+        topic={exact}
+        onOpen={() => {
+          setActiveSubjectId(exact.id);
+          setTab('subjects');
+        }}
+        onAdd={() => setAddingToDuplicate(true)}
+      />}
+      {exact && addingToDuplicate && <AddToTopicPanel
+        topic={exact}
+        data={data}
+        createSubject={onCreate}
+        createMaterial={createMaterial}
+        setActiveSubjectId={setActiveSubjectId}
+        setActiveMaterialId={setActiveMaterialId}
+        setTab={setTab}
+        onClose={() => setAddingToDuplicate(false)}
+      />}
       {matches.length > 0 && <div className="match-list">{matches.map((subject) => <button type="button" key={subject.id} onClick={() => { onLink('subject', subject.id, context); onCancel(); }}><strong>{subject.name}</strong><small>{subject.type} - {subjectUsageLabel(usage.subjects[subject.id])}</small></button>)}</div>}
     </div>
     <SubjectForm data={data} refs={refs} usage={usage} subject={{ type, name }} onSubmit={(values) => { onCreate(values, context); onCancel(); }} onCancel={onCancel} submitText="Create Topic" />
@@ -1138,8 +1430,8 @@ function MaterialCard({ material, data, refs, usage, onOpen, onUpdate, onDelete 
     <div className="card-title-row">
       <div><strong>{titleOf(material)}</strong><small>{material.type} - {materialUsageLabel(usage.materials[material.id])}</small></div>
       {onUpdate && <div className="card-actions">
-        <button className="icon-button neutral" onClick={() => setEditing(true)} title="Edit"><Pencil size={18} /></button>
-        <button className="icon-button danger-icon" onClick={() => { if (confirm('Delete this note? It will be removed from any studies or topics using it.')) onDelete(material.id); }} title="Delete"><Trash2 size={18} /></button>
+        <button className="icon-button neutral" onClick={(event) => { event.stopPropagation(); setEditing(true); }} title="Edit"><Pencil size={18} /></button>
+        <button className="icon-button danger-icon" onClick={(event) => { event.stopPropagation(); if (confirm('Delete this note? It will be removed from any studies or topics using it.')) onDelete(material.id); }} title="Delete"><Trash2 size={18} /></button>
       </div>}
     </div>
     {material.imageData && <img className="saved-image" src={material.imageData} alt={titleOf(material)} />}
@@ -1147,7 +1439,7 @@ function MaterialCard({ material, data, refs, usage, onOpen, onUpdate, onDelete 
     {material.scriptureRefs && <p className="meta"><strong>References:</strong> {material.scriptureRefs}</p>}
     <TagRow ids={material.tagIds} refs={refs} compact />
   </>;
-  if (onOpen) return <button className="entity-card" onClick={onOpen}>{content}</button>;
+  if (onOpen) return <article className="entity-card tappable-card" onClick={onOpen} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onOpen(); }}>{content}</article>;
   return <article className="entity-card">{content}</article>;
 }
 
