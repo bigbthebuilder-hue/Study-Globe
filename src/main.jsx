@@ -183,6 +183,7 @@ function App() {
   const [activeSubjectId, setActiveSubjectId] = useState('');
   const [activeMaterialId, setActiveMaterialId] = useState('');
   const [context, setContext] = useState(null);
+  const [gallery, setGallery] = useState({ type: 'all' });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [notice, setNotice] = useState('');
 
@@ -443,6 +444,8 @@ function App() {
     setActiveProjectId,
     setActiveSubjectId,
     setActiveMaterialId,
+    gallery,
+    setGallery,
   };
 
   return (
@@ -461,6 +464,7 @@ function App() {
         {tab === 'home' && <HomeScreen {...commonProps} openSettings={() => setSettingsOpen(true)} />}
         {tab === 'guided-add' && <GuidedAddScreen {...commonProps} onDone={goHome} />}
         {tab === 'explore' && <ExploreScreen {...commonProps} />}
+        {tab === 'picture-gallery' && <PictureGalleryScreen {...commonProps} />}
         {tab === 'material-detail' && <MaterialDetailScreen {...commonProps} activeMaterialId={activeMaterialId} />}
         {tab === 'projects' && <ProjectsScreen {...commonProps} activeProjectId={activeProjectId} />}
         {tab === 'subjects' && <SubjectsScreen {...commonProps} activeSubjectId={activeSubjectId} />}
@@ -511,6 +515,32 @@ function makeUsage(data) {
     };
   });
   return { subjects: subjectUsage, materials: materialUsage };
+}
+
+function isPicture(item) {
+  return Boolean(item?.imageData);
+}
+
+function picturesForSubject(data, subject) {
+  if (!subject) return [];
+  return data.materials
+    .filter((material) => isPicture(material) && ((subject.materialIds || []).includes(material.id) || (material.linkedSubjectIds || []).includes(subject.id)))
+    .sort(byRecent);
+}
+
+function picturesForProject(data, project) {
+  if (!project) return [];
+  return data.materials
+    .filter((material) => isPicture(material) && ((project.materialIds || []).includes(material.id) || (material.linkedProjectIds || []).includes(project.id)))
+    .sort(byRecent);
+}
+
+function pictureGroupName(material, refs) {
+  const subject = (material.linkedSubjectIds || []).map((id) => refs.subjects[id]).find(Boolean);
+  if (subject) return subject.name;
+  const project = (material.linkedProjectIds || []).map((id) => refs.projects[id]).find(Boolean);
+  if (project) return project.name;
+  return 'Other pictures';
 }
 
 function linkNewProject(current, project, tags, context) {
@@ -989,7 +1019,7 @@ function AddToTopicForm({ choice, topic, data, createSubject, createMaterial, se
   </form>;
 }
 
-function ExploreScreen({ data, refs, usage, setTab, setActiveProjectId, setActiveSubjectId, setActiveMaterialId }) {
+function ExploreScreen({ data, refs, usage, setTab, setActiveProjectId, setActiveSubjectId, setActiveMaterialId, setGallery }) {
   const firstProject = [...data.projects].sort(byRecent)[0];
   const firstPerson = data.subjects.filter((item) => item.type === 'Person').sort(byRecent)[0];
   const firstPlace = data.subjects.filter((item) => item.type === 'Place').sort(byRecent)[0];
@@ -1005,7 +1035,7 @@ function ExploreScreen({ data, refs, usage, setTab, setActiveProjectId, setActiv
     firstQuality && { label: 'Understand a quality', icon: <BookOpen />, action: () => { setActiveSubjectId(firstQuality.id); setTab('subjects'); } },
     firstEvent && { label: 'Learn about an event', icon: <BookOpen />, action: () => { setActiveSubjectId(firstEvent.id); setTab('subjects'); } },
     firstNote && { label: 'Read notes', icon: <FileText />, action: () => { setActiveMaterialId(firstNote.id); setTab('material-detail'); } },
-    firstPicture && { label: 'See pictures', icon: <ImagePlus />, action: () => { setActiveMaterialId(firstPicture.id); setTab('material-detail'); } },
+    firstPicture && { label: 'View Pictures', icon: <ImagePlus />, action: () => { setGallery({ type: 'all' }); setTab('picture-gallery'); } },
     { label: 'Search everything', icon: <Search />, action: () => setTab('search') },
   ].filter(Boolean);
 
@@ -1019,17 +1049,59 @@ function ExploreScreen({ data, refs, usage, setTab, setActiveProjectId, setActiv
   </section>;
 }
 
-function MaterialDetailScreen({ data, refs, usage, activeMaterialId, updateMaterial, deleteMaterial, setTab }) {
+function PictureGalleryScreen({ data, refs, gallery, setTab, setActiveMaterialId }) {
+  const scope = gallery || { type: 'all' };
+  const subject = scope.type === 'subject' ? refs.subjects[scope.id] : null;
+  const project = scope.type === 'project' ? refs.projects[scope.id] : null;
+  const material = scope.type === 'material' ? refs.materials[scope.id] : null;
+  const pictures = scope.type === 'subject'
+    ? picturesForSubject(data, subject)
+    : scope.type === 'project'
+      ? picturesForProject(data, project)
+      : scope.type === 'material' && isPicture(material)
+        ? [material]
+        : data.materials.filter(isPicture).sort(byRecent);
+
+  const groups = pictures.reduce((acc, item) => {
+    const name = scope.type === 'all' ? pictureGroupName(item, refs) : subject?.name || project?.name || titleOf(item);
+    acc[name] = [...(acc[name] || []), item];
+    return acc;
+  }, {});
+
+  return <section className="screen-stack">
+    <Panel title="View Pictures" icon={<ImagePlus />} actions={<button className="small-action" onClick={() => setTab('explore')}>Explore</button>}>
+      {Object.keys(groups).length ? Object.entries(groups).map(([name, items]) => (
+        <div key={name} className="gallery-group">
+          <SectionTitle text={name} />
+          <div className="gallery-grid">
+            {items.map((item) => <button
+              key={item.id}
+              className="gallery-card"
+              type="button"
+              onClick={() => { setActiveMaterialId(item.id); setTab('material-detail'); }}
+            >
+              <img src={item.imageData} alt={titleOf(item)} />
+              <strong>{titleOf(item)}</strong>
+              {item.body && <small>{item.body}</small>}
+            </button>)}
+          </div>
+        </div>
+      )) : <Empty text="No pictures saved yet." />}
+    </Panel>
+  </section>;
+}
+
+function MaterialDetailScreen({ data, refs, usage, activeMaterialId, updateMaterial, deleteMaterial, setTab, setGallery }) {
   const material = data.materials.find((item) => item.id === activeMaterialId) || data.materials[0];
   return <section className="screen-stack">
     <Panel title="Note" icon={<FileText />} actions={<button className="small-action" onClick={() => setTab('explore')}>Explore</button>}>
-      {material ? <MaterialCard material={material} data={data} refs={refs} usage={usage} onUpdate={updateMaterial} onDelete={deleteMaterial} /> : <Empty text="No notes yet." />}
+      {material ? <MaterialCard material={material} data={data} refs={refs} usage={usage} onUpdate={updateMaterial} onDelete={deleteMaterial} onPictureOpen={() => { setGallery({ type: 'material', id: material.id }); setTab('picture-gallery'); }} /> : <Empty text="No notes yet." />}
     </Panel>
   </section>;
 }
 
 function ProjectsScreen(props) {
-  const { data, refs, usage, activeProjectId, setActiveProjectId, openCreate, updateProject, deleteProject, setActiveSubjectId } = props;
+  const { data, refs, usage, activeProjectId, setActiveProjectId, openCreate, updateProject, deleteProject, setActiveSubjectId, setActiveMaterialId, setTab, setGallery } = props;
   const active = data.projects.find((project) => project.id === activeProjectId) || data.projects[0];
   const [editing, setEditing] = useState(false);
   useEffect(() => setEditing(false), [active?.id]);
@@ -1038,41 +1110,55 @@ function ProjectsScreen(props) {
     <aside className="panel list-panel">
       <div className="panel-head"><h2><FolderOpen size={20} />Studies</h2></div>
       <button className="primary-action" onClick={() => openCreate('project')}><CirclePlus /> Start Study</button>
-      {data.projects.length ? data.projects.map((project) => <ProjectCard key={project.id} project={project} refs={refs} selected={active?.id === project.id} onOpen={() => setActiveProjectId(project.id)} />) : <Empty text="Start a study." />}
+      {data.projects.length ? data.projects.map((project) => <ProjectCard
+        key={project.id}
+        project={project}
+        refs={refs}
+        selected={active?.id === project.id}
+        pictures={picturesForProject(data, project)}
+        onPicturesOpen={() => { setGallery({ type: 'project', id: project.id }); setTab('picture-gallery'); }}
+        onOpen={() => setActiveProjectId(project.id)}
+      />) : <Empty text="Start a study." />}
     </aside>
     <section className="panel detail-panel">
       {!active ? <Empty text="Select or start a study." /> : editing ? (
         <ProjectForm data={data} refs={refs} project={active} onSubmit={(values) => { updateProject(active.id, values); setEditing(false); }} onCancel={() => setEditing(false)} />
       ) : (
-        <ProjectDetail project={active} data={data} refs={refs} usage={usage} openCreate={openCreate} updateMaterial={props.updateMaterial} deleteMaterial={props.deleteMaterial} onEdit={() => setEditing(true)} onDelete={() => { if (confirm('Delete this study? Topics and notes will remain.')) deleteProject(active.id); }} setActiveSubjectId={setActiveSubjectId} />
+        <ProjectDetail project={active} data={data} refs={refs} usage={usage} openCreate={openCreate} updateMaterial={props.updateMaterial} deleteMaterial={props.deleteMaterial} onEdit={() => setEditing(true)} onDelete={() => { if (confirm('Delete this study? Topics and notes will remain.')) deleteProject(active.id); }} setActiveSubjectId={setActiveSubjectId} setActiveMaterialId={setActiveMaterialId} setTab={setTab} setGallery={setGallery} />
       )}
     </section>
   </section>;
 }
 
-function ProjectDetail({ project, data, refs, usage, openCreate, updateMaterial, deleteMaterial, onEdit, onDelete, setActiveSubjectId }) {
+function ProjectDetail({ project, data, refs, usage, openCreate, updateMaterial, deleteMaterial, onEdit, onDelete, setActiveSubjectId, setActiveMaterialId, setTab, setGallery }) {
   const subjects = (project.subjectIds || []).map((id) => refs.subjects[id]).filter(Boolean);
   const materials = (project.materialIds || []).map((id) => refs.materials[id]).filter(Boolean);
   const questions = materials.filter((item) => item.type === 'Research Question');
   const noteMaterials = materials.filter((item) => item.type !== 'Research Question');
+  const pictureMaterials = picturesForProject(data, project);
+  const openProjectPictures = () => { setGallery({ type: 'project', id: project.id }); setTab('picture-gallery'); };
   return <>
     <DetailHeader title={project.name} subtitle={`${subjects.length} ${plural('topic', subjects.length)} · ${materials.length} ${plural('note', materials.length)}`} onEdit={onEdit} onDelete={onDelete} />
     <TagRow ids={project.tagIds} refs={refs} />
     <SectionTitle text="Overview" />
     <p className="soft-box">{project.description || 'A place to keep related topics and notes together.'}</p>
+    {pictureMaterials.length > 0 && <>
+      <SectionTitle text="Pictures" />
+      <ImagePreviewGroup images={pictureMaterials} onOpen={openProjectPictures} />
+    </>}
     <SectionTitle text="Topics" actions={<button className="small-action" onClick={() => openCreate('subject', { type: 'project', id: project.id })}><CirclePlus size={16} /> Add Topic</button>} />
-    {subjects.length ? subjects.map((subject) => <SubjectCard key={subject.id} subject={subject} refs={refs} usage={usage} onOpen={() => setActiveSubjectId(subject.id)} />) : <Empty text="No topics yet." />}
+    {subjects.length ? subjects.map((subject) => <SubjectCard key={subject.id} subject={subject} refs={refs} usage={usage} pictures={picturesForSubject(data, subject)} onPicturesOpen={() => { setGallery({ type: 'subject', id: subject.id }); setTab('picture-gallery'); }} onOpen={() => setActiveSubjectId(subject.id)} />) : <Empty text="No topics yet." />}
     <SectionTitle text="Notes" actions={<button className="small-action" onClick={() => openCreate('material', { type: 'project', id: project.id })}><CirclePlus size={16} /> Add Note</button>} />
-    {noteMaterials.length ? noteMaterials.map((material) => <MaterialCard key={material.id} material={material} data={data} refs={refs} usage={usage} onUpdate={updateMaterial} onDelete={deleteMaterial} />) : <Empty text="No notes yet." />}
+    {noteMaterials.length ? noteMaterials.map((material) => <MaterialCard key={material.id} material={material} data={data} refs={refs} usage={usage} onUpdate={updateMaterial} onDelete={deleteMaterial} onOpen={() => { setActiveMaterialId(material.id); setTab('material-detail'); }} onPictureOpen={() => { setGallery({ type: 'material', id: material.id }); setTab('picture-gallery'); }} />) : <Empty text="No notes yet." />}
     <SectionTitle text="Questions" />
-    {questions.length ? questions.map((material) => <MaterialCard key={material.id} material={material} data={data} refs={refs} usage={usage} onUpdate={updateMaterial} onDelete={deleteMaterial} />) : <Empty text="Questions you save will collect here." />}
+    {questions.length ? questions.map((material) => <MaterialCard key={material.id} material={material} data={data} refs={refs} usage={usage} onUpdate={updateMaterial} onDelete={deleteMaterial} onOpen={() => { setActiveMaterialId(material.id); setTab('material-detail'); }} />) : <Empty text="Questions you save will collect here." />}
     <SectionTitle text="Links" />
     <ConnectionList connections={buildConnections(data).filter((item) => item.ids.includes(project.id))} />
   </>;
 }
 
 function SubjectsScreen(props) {
-  const { data, refs, usage, activeSubjectId, setActiveSubjectId, openCreate, updateSubject, deleteSubject } = props;
+  const { data, refs, usage, activeSubjectId, setActiveSubjectId, openCreate, updateSubject, deleteSubject, setGallery, setTab } = props;
   const [filter, setFilter] = useState('All');
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState(false);
@@ -1086,7 +1172,16 @@ function SubjectsScreen(props) {
       <button className="primary-action" onClick={() => openCreate('subject')}><CirclePlus /> Add Topic</button>
       <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search topics" />
       <div className="chip-row"><button className={filter === 'All' ? 'chip active' : 'chip'} onClick={() => setFilter('All')}>All</button>{SUBJECT_TYPES.map((type) => <button key={type} className={filter === type ? 'chip active' : 'chip'} onClick={() => setFilter(type)}>{type}</button>)}</div>
-      {subjects.length ? subjects.map((subject) => <SubjectCard key={subject.id} subject={subject} refs={refs} usage={usage} selected={active?.id === subject.id} onOpen={() => setActiveSubjectId(subject.id)} />) : <Empty text="No topics match that filter." />}
+      {subjects.length ? subjects.map((subject) => <SubjectCard
+        key={subject.id}
+        subject={subject}
+        refs={refs}
+        usage={usage}
+        selected={active?.id === subject.id}
+        pictures={picturesForSubject(data, subject)}
+        onPicturesOpen={() => { setGallery({ type: 'subject', id: subject.id }); setTab('picture-gallery'); }}
+        onOpen={() => setActiveSubjectId(subject.id)}
+      />) : <Empty text="No topics match that filter." />}
     </aside>
     <section className="panel detail-panel">
       {!active ? <Empty text="Select or add a topic." /> : editing ? (
@@ -1105,6 +1200,7 @@ function SubjectsScreen(props) {
           setActiveSubjectId={props.setActiveSubjectId}
           setActiveMaterialId={props.setActiveMaterialId}
           setTab={props.setTab}
+          setGallery={props.setGallery}
           onEdit={() => setEditing(true)}
           onDelete={() => { if (confirm('Delete this topic? Studies and notes will remain.')) deleteSubject(active.id); }}
         />
@@ -1113,13 +1209,15 @@ function SubjectsScreen(props) {
   </section>;
 }
 
-function SubjectDetail({ subject, data, refs, usage, openCreate, createSubject, createMaterial, updateMaterial, deleteMaterial, setActiveSubjectId, setActiveMaterialId, setTab, onEdit, onDelete }) {
+function SubjectDetail({ subject, data, refs, usage, openCreate, createSubject, createMaterial, updateMaterial, deleteMaterial, setActiveSubjectId, setActiveMaterialId, setTab, setGallery, onEdit, onDelete }) {
   const [adding, setAdding] = useState(false);
   const projects = data.projects.filter((project) => (project.subjectIds || []).includes(subject.id) || (subject.linkedProjectIds || []).includes(project.id));
   const linkedSubjects = unique([...(subject.linkedSubjectIds || []), ...data.subjects.filter((other) => (other.linkedSubjectIds || []).includes(subject.id)).map((other) => other.id)])
     .filter((id) => id !== subject.id).map((id) => refs.subjects[id]).filter(Boolean);
   const materials = unique([...(subject.materialIds || []), ...data.materials.filter((material) => (material.linkedSubjectIds || []).includes(subject.id)).map((material) => material.id)])
     .map((id) => refs.materials[id]).filter(Boolean);
+  const pictureMaterials = picturesForSubject(data, subject);
+  const openSubjectPictures = () => { setGallery({ type: 'subject', id: subject.id }); setTab('picture-gallery'); };
 
   return <>
     <DetailHeader title={subject.name} subtitle={subject.type} badge={subjectUsageLabel(usage.subjects[subject.id])} onEdit={onEdit} onDelete={onDelete} />
@@ -1139,22 +1237,26 @@ function SubjectDetail({ subject, data, refs, usage, openCreate, createSubject, 
     <TagRow ids={subject.tagIds} refs={refs} />
     <SectionTitle text="Overview" />
     <p className="soft-box">{subject.progressStatus || 'In progress'} - {refs.categories[subject.categoryId]?.name || 'No category'}</p>
+    {pictureMaterials.length > 0 && <>
+      <SectionTitle text="Pictures" />
+      <ImagePreviewGroup images={pictureMaterials} onOpen={openSubjectPictures} />
+    </>}
     <details className="template-box">
       <summary>Template fields <ChevronDown size={16} /></summary>
       <FieldView fields={subject.fields} />
     </details>
     <SectionTitle text="Used In" />
-    {projects.length ? projects.map((project) => <ProjectCard key={project.id} project={project} refs={refs} />) : <Empty text="Not used in a study yet." />}
+    {projects.length ? projects.map((project) => <ProjectCard key={project.id} project={project} refs={refs} pictures={picturesForProject(data, project)} onPicturesOpen={() => { setGallery({ type: 'project', id: project.id }); setTab('picture-gallery'); }} />) : <Empty text="Not used in a study yet." />}
     <SectionTitle text="Related Topics" actions={<button className="small-action" onClick={() => openCreate('subject', { type: 'subject', id: subject.id })}><CirclePlus size={16} /> Add Topic</button>} />
-    {linkedSubjects.length ? linkedSubjects.map((item) => <SubjectCard key={item.id} subject={item} refs={refs} usage={usage} />) : <Empty text="No related topics yet." />}
+    {linkedSubjects.length ? linkedSubjects.map((item) => <SubjectCard key={item.id} subject={item} refs={refs} usage={usage} pictures={picturesForSubject(data, item)} onPicturesOpen={() => { setGallery({ type: 'subject', id: item.id }); setTab('picture-gallery'); }} />) : <Empty text="No related topics yet." />}
     <SectionTitle text="Notes & Pictures" actions={<button className="small-action" onClick={() => setAdding(true)}><CirclePlus size={16} /> Add Note or Picture</button>} />
-    {materials.length ? materials.map((material) => <MaterialCard key={material.id} material={material} data={data} refs={refs} usage={usage} onUpdate={updateMaterial} onDelete={deleteMaterial} onOpen={() => { setActiveMaterialId(material.id); setTab('material-detail'); }} />) : <Empty text="No notes yet." />}
+    {materials.length ? materials.map((material) => <MaterialCard key={material.id} material={material} data={data} refs={refs} usage={usage} onUpdate={updateMaterial} onDelete={deleteMaterial} onOpen={() => { setActiveMaterialId(material.id); setTab('material-detail'); }} onPictureOpen={() => { setGallery({ type: 'material', id: material.id }); setTab('picture-gallery'); }} />) : <Empty text="No notes yet." />}
     <SectionTitle text="Links" />
     <ConnectionList connections={buildConnections(data).filter((item) => item.ids.includes(subject.id))} />
   </>;
 }
 
-function SearchScreen({ data, refs, usage, setTab, setActiveProjectId, setActiveSubjectId }) {
+function SearchScreen({ data, refs, usage, setTab, setActiveProjectId, setActiveSubjectId, setActiveMaterialId, setGallery }) {
   const [query, setQuery] = useState('');
   const results = useMemo(() => groupedSearch(data, refs, query), [data, refs, query]);
   return <section className="screen-stack">
@@ -1163,9 +1265,9 @@ function SearchScreen({ data, refs, usage, setTab, setActiveProjectId, setActive
       <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search studies, topics, notes, tags, or scriptures" autoFocus />
     </div>
     {query ? <div className="result-groups">
-      <ResultGroup title="Studies" items={results.projects} render={(project) => <ProjectCard project={project} refs={refs} onOpen={() => { setActiveProjectId(project.id); setTab('projects'); }} />} />
-      <ResultGroup title="Topics" items={results.subjects} render={(subject) => <SubjectCard subject={subject} refs={refs} usage={usage} onOpen={() => { setActiveSubjectId(subject.id); setTab('subjects'); }} />} />
-      <ResultGroup title="Notes" items={results.materials} render={(material) => <MaterialCard material={material} refs={refs} usage={usage} />} />
+      <ResultGroup title="Studies" items={results.projects} render={(project) => <ProjectCard project={project} refs={refs} pictures={picturesForProject(data, project)} onPicturesOpen={() => { setGallery({ type: 'project', id: project.id }); setTab('picture-gallery'); }} onOpen={() => { setActiveProjectId(project.id); setTab('projects'); }} />} />
+      <ResultGroup title="Topics" items={results.subjects} render={(subject) => <SubjectCard subject={subject} refs={refs} usage={usage} pictures={picturesForSubject(data, subject)} onPicturesOpen={() => { setGallery({ type: 'subject', id: subject.id }); setTab('picture-gallery'); }} onOpen={() => { setActiveSubjectId(subject.id); setTab('subjects'); }} />} />
+      <ResultGroup title="Notes" items={results.materials} render={(material) => <MaterialCard material={material} data={data} refs={refs} usage={usage} onOpen={() => { setActiveMaterialId(material.id); setTab('material-detail'); }} onPictureOpen={() => { setGallery({ type: 'material', id: material.id }); setTab('picture-gallery'); }} />} />
       <ResultGroup title="Tags" items={results.tags} render={(tagItem) => <div className="plain-card"><Tag size={16} />{tagItem.name}</div>} />
     </div> : <Empty text="Live results appear while you type." />}
   </section>;
@@ -1399,19 +1501,39 @@ function SectionTitle({ text, actions }) {
   return <div className="section-title"><h3>{text}</h3>{actions}</div>;
 }
 
-function ProjectCard({ project, refs, selected, onOpen }) {
+function ImagePreviewGroup({ images = [], onOpen }) {
+  const pictureItems = images.filter(isPicture);
+  const visible = pictureItems.slice(0, 4);
+  const extra = pictureItems.length - visible.length;
+  if (!visible.length) return null;
+  const className = `picture-preview-group ${visible.length === 1 ? 'single' : 'multi'}`;
+  const content = <div className="picture-preview-grid" aria-label={`${pictureItems.length} ${plural('picture', pictureItems.length)}`}>
+    {visible.map((image, index) => (
+      <span key={image.id || index} className="picture-tile">
+        <img src={image.imageData} alt={titleOf(image)} />
+        {extra > 0 && index === visible.length - 1 && <span className="picture-more">+{extra}</span>}
+      </span>
+    ))}
+  </div>;
+  if (!onOpen) return <div className={className}>{content}</div>;
+  return <button type="button" className={className} onClick={(event) => { event.stopPropagation(); onOpen(); }}>{content}</button>;
+}
+
+function ProjectCard({ project, refs, selected, onOpen, pictures = [], onPicturesOpen }) {
   const topicCount = (project.subjectIds || []).length;
   const noteCount = (project.materialIds || []).length;
   const content = <><div><strong>{project.name}</strong><small>{topicCount} {plural('topic', topicCount)} · {noteCount} {plural('note', noteCount)}</small></div><TagRow ids={project.tagIds} refs={refs} compact /></>;
-  return onOpen ? <button className={`entity-card ${selected ? 'selected' : ''}`} onClick={onOpen}>{content}</button> : <article className="entity-card">{content}</article>;
+  const cardContent = <>{content}<ImagePreviewGroup images={pictures} onOpen={onPicturesOpen} /></>;
+  return onOpen ? <article className={`entity-card tappable-card ${selected ? 'selected' : ''}`} onClick={onOpen} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onOpen(); }}>{cardContent}</article> : <article className="entity-card">{cardContent}</article>;
 }
 
-function SubjectCard({ subject, refs, usage, selected, onOpen }) {
+function SubjectCard({ subject, refs, usage, selected, onOpen, pictures = [], onPicturesOpen }) {
   const content = <><div><strong>{subject.name}</strong><small>{subject.type} - {subjectUsageLabel(usage.subjects[subject.id])}</small></div><TagRow ids={subject.tagIds} refs={refs} compact /></>;
-  return onOpen ? <button className={`entity-card ${selected ? 'selected' : ''}`} onClick={onOpen}>{content}</button> : <article className="entity-card">{content}</article>;
+  const cardContent = <>{content}<ImagePreviewGroup images={pictures} onOpen={onPicturesOpen} /></>;
+  return onOpen ? <article className={`entity-card tappable-card ${selected ? 'selected' : ''}`} onClick={onOpen} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onOpen(); }}>{cardContent}</article> : <article className="entity-card">{cardContent}</article>;
 }
 
-function MaterialCard({ material, data, refs, usage, onOpen, onUpdate, onDelete }) {
+function MaterialCard({ material, data, refs, usage, onOpen, onPictureOpen, onUpdate, onDelete }) {
   const [editing, setEditing] = useState(false);
   if (editing) {
     return <MaterialForm
@@ -1434,7 +1556,7 @@ function MaterialCard({ material, data, refs, usage, onOpen, onUpdate, onDelete 
         <button className="icon-button danger-icon" onClick={(event) => { event.stopPropagation(); if (confirm('Delete this note? It will be removed from any studies or topics using it.')) onDelete(material.id); }} title="Delete"><Trash2 size={18} /></button>
       </div>}
     </div>
-    {material.imageData && <img className="saved-image" src={material.imageData} alt={titleOf(material)} />}
+    {material.imageData && <ImagePreviewGroup images={[material]} onOpen={onPictureOpen || onOpen} />}
     {material.body && <p>{material.body}</p>}
     {material.scriptureRefs && <p className="meta"><strong>References:</strong> {material.scriptureRefs}</p>}
     <TagRow ids={material.tagIds} refs={refs} compact />
