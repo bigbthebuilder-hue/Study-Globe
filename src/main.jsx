@@ -435,6 +435,9 @@ function App() {
 
       <main>
         {tab === 'home' && <HomeScreen {...commonProps} openSettings={() => setSettingsOpen(true)} />}
+        {tab === 'guided-add' && <GuidedAddScreen {...commonProps} onDone={goHome} />}
+        {tab === 'explore' && <ExploreScreen {...commonProps} />}
+        {tab === 'material-detail' && <MaterialDetailScreen {...commonProps} activeMaterialId={activeMaterialId} />}
         {tab === 'projects' && <ProjectsScreen {...commonProps} activeProjectId={activeProjectId} />}
         {tab === 'subjects' && <SubjectsScreen {...commonProps} activeSubjectId={activeSubjectId} />}
         {tab === 'search' && <SearchScreen {...commonProps} />}
@@ -448,8 +451,8 @@ function App() {
 
       <nav className="bottom-nav">
         <NavButton label="Home" icon={<Home />} active={tab === 'home'} onClick={goHome} />
-        <NavButton label="Studies" icon={<FolderOpen />} active={tab === 'projects'} onClick={() => setTab('projects')} />
-        <NavButton label="Topics" icon={<BookOpen />} active={tab === 'subjects'} onClick={() => setTab('subjects')} />
+        <NavButton label="Add" icon={<CirclePlus />} active={tab === 'guided-add'} onClick={() => setTab('guided-add')} />
+        <NavButton label="Explore" icon={<Compass />} active={tab === 'explore'} onClick={() => setTab('explore')} />
         <NavButton label="Search" icon={<Search />} active={tab === 'search'} onClick={() => setTab('search')} />
         <NavButton label="Links" icon={<Network />} active={tab === 'connections'} onClick={() => setTab('connections')} />
       </nav>
@@ -550,36 +553,232 @@ function Stat({ label, value }) {
   return <div className="stat"><strong>{value}</strong><span>{label}</span></div>;
 }
 
-function HomeScreen({ data, refs, usage, setTab, openCreate, setActiveProjectId, setActiveSubjectId, setActiveMaterialId, openSettings }) {
-  const recentSubjects = [...data.subjects].sort(byRecent).slice(0, 4);
-  const recentMaterials = [...data.materials].sort(byRecent).slice(0, 4);
-  const activeProjects = [...data.projects].sort(byRecent).slice(0, 4);
-  const counts = `${data.projects.length} ${plural('study', data.projects.length)} · ${data.subjects.length} ${plural('topic', data.subjects.length)} · ${data.materials.length} ${plural('note', data.materials.length)} · ${data.tags.length} ${plural('tag', data.tags.length)}`;
+function HomeScreen({ setTab, openSettings }) {
 
   return <section className="screen-stack">
     <div className="hero-panel">
       <div>
         <p className="eyebrow">My study</p>
         <h1>Study Globe</h1>
-        <p className="count-line">{counts}</p>
       </div>
-      <div className="quick-grid">
-        <button className="primary-action" onClick={() => openCreate('project')}><CirclePlus /> Start Study</button>
-        <button className="primary-action" onClick={() => openCreate('subject')}><BookOpen /> Add Topic</button>
-        <button className="secondary-action" onClick={() => openCreate('material')}><FileText /> Add Note</button>
+      <div className="home-actions">
+        <button className="primary-action" onClick={() => setTab('guided-add')}><CirclePlus /> Add to My Study</button>
+        <button className="primary-action calm" onClick={() => setTab('explore')}><Compass /> Explore My Study</button>
         <button className="secondary-action" onClick={() => setTab('search')}><Search /> Search My Study</button>
-        <button className="secondary-action" onClick={openSettings}><Settings /> Settings</button>
-        <button className="secondary-action" onClick={openSettings}><Download /> Backup / Restore</button>
+      </div>
+      <div className="secondary-strip">
+        <button onClick={openSettings}><Download size={18} /> Backup</button>
+        <button onClick={openSettings}><Settings size={18} /> Settings</button>
       </div>
     </div>
-    <Panel title="Continue Studying / Active Studies" icon={<FolderOpen />}>
-      {activeProjects.length ? activeProjects.map((project) => <ProjectCard key={project.id} project={project} refs={refs} onOpen={() => { setActiveProjectId(project.id); setTab('projects'); }} />) : <Empty text="Start a study when you are ready." />}
+  </section>;
+}
+
+const ADD_CHOICES = [
+  { key: 'Person', label: 'Person', prompt: 'Who would you like to learn more about?', subjectType: 'Person', picture: true },
+  { key: 'Place', label: 'Place', prompt: 'What place do you want to add to the map today?', subjectType: 'Place', picture: true },
+  { key: 'Quality', label: 'Quality', prompt: 'What quality do you want to understand better?', subjectType: 'Quality' },
+  { key: 'Event', label: 'Event', prompt: 'What event do you want to learn about?', subjectType: 'Event', picture: true },
+  { key: 'Note', label: 'Note', prompt: 'What note do you want to save?', materialType: 'Note', picture: true },
+  { key: 'Picture', label: 'Picture', prompt: 'What picture do you want to save?', materialType: 'Image', picture: true, pictureFirst: true },
+  { key: 'Scripture / Reference', label: 'Scripture / Reference', prompt: 'What scripture or reference do you want to remember?', materialType: 'Scripture / Reference' },
+  { key: 'Question', label: 'Question', prompt: 'What question do you want to research?', materialType: 'Research Question' },
+  { key: 'Study', label: 'Study', prompt: 'What study do you want to start?', project: true },
+];
+
+function GuidedAddScreen({ data, refs, createProject, createSubject, createMaterial, setActiveProjectId, setActiveSubjectId, setActiveMaterialId, setTab, onDone }) {
+  const [choiceKey, setChoiceKey] = useState('');
+  const choice = ADD_CHOICES.find((item) => item.key === choiceKey);
+
+  return <section className="screen-stack">
+    <Panel title="Add to My Study" icon={<CirclePlus />}>
+      {!choice ? (
+        <div className="choice-grid">
+          <h3>What would you like to add?</h3>
+          {ADD_CHOICES.map((item) => <button key={item.key} className="choice-card" onClick={() => setChoiceKey(item.key)}>{item.label}</button>)}
+        </div>
+      ) : (
+        <GuidedAddForm
+          choice={choice}
+          data={data}
+          refs={refs}
+          createProject={createProject}
+          createSubject={createSubject}
+          createMaterial={createMaterial}
+          setActiveProjectId={setActiveProjectId}
+          setActiveSubjectId={setActiveSubjectId}
+          setActiveMaterialId={setActiveMaterialId}
+          setTab={setTab}
+          onBack={() => setChoiceKey('')}
+          onDone={onDone}
+        />
+      )}
     </Panel>
-    <Panel title="Recent Topics" icon={<BookOpen />}>
-      {recentSubjects.length ? recentSubjects.map((subject) => <SubjectCard key={subject.id} subject={subject} refs={refs} usage={usage} onOpen={() => { setActiveSubjectId(subject.id); setTab('subjects'); }} />) : <Empty text="Add a topic to begin." />}
+  </section>;
+}
+
+function GuidedAddForm({ choice, data, refs, createProject, createSubject, createMaterial, setActiveProjectId, setActiveSubjectId, setActiveMaterialId, setTab, onBack }) {
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [pictureAbout, setPictureAbout] = useState('');
+  const [imageData, setImageData] = useState('');
+  const [showPicture, setShowPicture] = useState(choice.pictureFirst || false);
+  const [description, setDescription] = useState('');
+  const [scriptureRefs, setScriptureRefs] = useState('');
+  const [source, setSource] = useState('');
+  const [projectIds, setProjectIds] = useState([]);
+  const [subjectIds, setSubjectIds] = useState([]);
+  const [categoryId, setCategoryId] = useState('');
+  const [tags, setTags] = useState('');
+
+  const readImage = (file) => {
+    if (!file || !file.type?.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = () => setImageData(reader.result);
+    reader.readAsDataURL(file);
+  };
+
+  const save = (event) => {
+    event.preventDefault();
+    if (!title.trim()) return;
+
+    if (choice.project) {
+      const id = createProject({ name: title, description, tags, subjectIds, materialIds: [] });
+      setActiveProjectId(id);
+      setTab('projects');
+      return;
+    }
+
+    if (choice.subjectType) {
+      const id = createSubject({
+        type: choice.subjectType,
+        name: title,
+        categoryId,
+        description,
+        tags,
+        linkedProjectIds: projectIds,
+        linkedSubjectIds: [],
+        materialIds: [],
+        fields: { notes: body, scriptureRefs },
+      });
+      if (imageData) {
+        createMaterial({
+          type: 'Image',
+          title: `${title} picture`,
+          body: pictureAbout || title,
+          imageData,
+          source,
+          scriptureRefs: '',
+          personalTakeaway: '',
+          tags: '',
+          linkedProjectIds: projectIds,
+          linkedSubjectIds: [id],
+        }, { type: 'subject', id });
+      }
+      setActiveSubjectId(id);
+      setTab('subjects');
+      return;
+    }
+
+    const id = createMaterial({
+      type: choice.materialType,
+      title,
+      body: choice.pictureFirst ? pictureAbout : body,
+      imageData,
+      source,
+      scriptureRefs: choice.materialType === 'Scripture / Reference' ? title : scriptureRefs,
+      personalTakeaway: '',
+      tags,
+      linkedProjectIds: projectIds,
+      linkedSubjectIds: subjectIds,
+    });
+    setActiveMaterialId(id);
+    setTab('material-detail');
+  };
+
+  return <form className="guided-form" onSubmit={save}>
+    <button className="text-button" type="button" onClick={onBack}>Change what I am adding</button>
+    <label>{choice.prompt}<input value={title} onChange={(event) => setTitle(event.target.value)} autoFocus required /></label>
+
+    {choice.key === 'Picture' && <label>What is this picture about?<textarea value={pictureAbout} onChange={(event) => setPictureAbout(event.target.value)} /></label>}
+    {['Note', 'Question'].includes(choice.key) && <label>Details<textarea value={body} onChange={(event) => setBody(event.target.value)} /></label>}
+    {choice.key === 'Scripture / Reference' && <label>Why do you want to remember it?<textarea value={body} onChange={(event) => setBody(event.target.value)} /></label>}
+    {choice.project && <label>A few words about this study<textarea value={description} onChange={(event) => setDescription(event.target.value)} /></label>}
+
+    {choice.picture && !showPicture && <button className="secondary-action" type="button" onClick={() => setShowPicture(true)}><ImagePlus /> Add picture</button>}
+    {showPicture && <PicturePicker imageData={imageData} readImage={readImage} />}
+
+    <details className="template-box">
+      <summary>More Details <ChevronDown size={16} /></summary>
+      {!choice.project && <CheckList title="Studies" items={data.projects} selected={projectIds} setSelected={setProjectIds} label={(item) => item.name} />}
+      {!choice.project && <CheckList title="Topics" items={data.subjects} selected={subjectIds} setSelected={setSubjectIds} label={(item) => `${item.name} - ${item.type}`} />}
+      {choice.subjectType && <label>Category<select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}><option value="">No category</option>{data.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>}
+      {choice.subjectType && <label>Notes<textarea value={body} onChange={(event) => setBody(event.target.value)} /></label>}
+      {choice.subjectType && <label>Scripture / references<input value={scriptureRefs} onChange={(event) => setScriptureRefs(event.target.value)} /></label>}
+      {!choice.project && <label>Source<input value={source} onChange={(event) => setSource(event.target.value)} /></label>}
+      <label>Tags<input value={tags} onChange={(event) => setTags(event.target.value)} /></label>
+    </details>
+
+    <div className="action-row">
+      <button className="secondary-action" type="button" onClick={onBack}>Back</button>
+      <button className="primary-action" type="submit"><CirclePlus /> Save</button>
+    </div>
+  </form>;
+}
+
+function PicturePicker({ imageData, readImage }) {
+  return <div className="image-dropzone" onPaste={(event) => {
+    const file = [...(event.clipboardData?.files || [])].find((entry) => entry.type.startsWith('image/'));
+    if (file) {
+      event.preventDefault();
+      readImage(file);
+    }
+  }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
+    event.preventDefault();
+    readImage([...(event.dataTransfer?.files || [])].find((entry) => entry.type.startsWith('image/')));
+  }} tabIndex={0}>
+    <ImagePlus size={28} />
+    <strong>Add picture</strong>
+    <input type="file" accept="image/*" onChange={(event) => readImage(event.target.files?.[0])} />
+    {imageData && <img className="image-preview" src={imageData} alt="Selected preview" />}
+  </div>;
+}
+
+function ExploreScreen({ data, refs, usage, setTab, setActiveProjectId, setActiveSubjectId, setActiveMaterialId }) {
+  const firstProject = [...data.projects].sort(byRecent)[0];
+  const firstPerson = data.subjects.filter((item) => item.type === 'Person').sort(byRecent)[0];
+  const firstPlace = data.subjects.filter((item) => item.type === 'Place').sort(byRecent)[0];
+  const firstQuality = data.subjects.filter((item) => item.type === 'Quality').sort(byRecent)[0];
+  const firstEvent = data.subjects.filter((item) => item.type === 'Event').sort(byRecent)[0];
+  const firstNote = data.materials.filter((item) => item.type !== 'Image' && !item.imageData).sort(byRecent)[0];
+  const firstPicture = data.materials.filter((item) => item.type === 'Image' || item.imageData).sort(byRecent)[0];
+
+  const entries = [
+    firstProject && { label: 'Continue a study', icon: <FolderOpen />, action: () => { setActiveProjectId(firstProject.id); setTab('projects'); } },
+    firstPerson && { label: 'Meet someone', icon: <BookOpen />, action: () => { setActiveSubjectId(firstPerson.id); setTab('subjects'); } },
+    firstPlace && { label: 'Visit a place', icon: <Compass />, action: () => { setActiveSubjectId(firstPlace.id); setTab('subjects'); } },
+    firstQuality && { label: 'Understand a quality', icon: <BookOpen />, action: () => { setActiveSubjectId(firstQuality.id); setTab('subjects'); } },
+    firstEvent && { label: 'Learn about an event', icon: <BookOpen />, action: () => { setActiveSubjectId(firstEvent.id); setTab('subjects'); } },
+    firstNote && { label: 'Read notes', icon: <FileText />, action: () => { setActiveMaterialId(firstNote.id); setTab('material-detail'); } },
+    firstPicture && { label: 'See pictures', icon: <ImagePlus />, action: () => { setActiveMaterialId(firstPicture.id); setTab('material-detail'); } },
+    { label: 'Search everything', icon: <Search />, action: () => setTab('search') },
+  ].filter(Boolean);
+
+  return <section className="screen-stack">
+    <Panel title="Explore My Study" icon={<Compass />}>
+      <div className="explore-grid">
+        {entries.map((entry) => <button key={entry.label} className="choice-card" onClick={entry.action}>{React.cloneElement(entry.icon, { size: 22 })}<span>{entry.label}</span></button>)}
+      </div>
     </Panel>
-    <Panel title="Recent Notes" icon={<FileText />}>
-      {recentMaterials.length ? recentMaterials.map((material) => <MaterialCard key={material.id} material={material} refs={refs} usage={usage} onOpen={() => setActiveMaterialId(material.id)} />) : <Empty text="Add a note, question, reference, or takeaway." />}
+    {data.projects.length === 0 && data.subjects.length === 0 && data.materials.length === 0 && <Empty text="Add something to your study, then Explore will open more paths." />}
+  </section>;
+}
+
+function MaterialDetailScreen({ data, refs, usage, activeMaterialId, updateMaterial, deleteMaterial, setTab }) {
+  const material = data.materials.find((item) => item.id === activeMaterialId) || data.materials[0];
+  return <section className="screen-stack">
+    <Panel title="Note" icon={<FileText />} actions={<button className="small-action" onClick={() => setTab('explore')}>Explore</button>}>
+      {material ? <MaterialCard material={material} data={data} refs={refs} usage={usage} onUpdate={updateMaterial} onDelete={deleteMaterial} /> : <Empty text="No notes yet." />}
     </Panel>
   </section>;
 }
