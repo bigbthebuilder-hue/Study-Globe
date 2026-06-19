@@ -184,6 +184,7 @@ function App() {
   const [activeMaterialId, setActiveMaterialId] = useState('');
   const [context, setContext] = useState(null);
   const [gallery, setGallery] = useState({ type: 'all' });
+  const [history, setHistory] = useState([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [notice, setNotice] = useState('');
 
@@ -416,20 +417,55 @@ function App() {
   }), 'Tag removed everywhere');
 
   const openCreate = (kind, nextContext = null) => {
+    setHistory((items) => [{ tab, activeProjectId, activeSubjectId, activeMaterialId, gallery, context }, ...items].slice(0, 50));
     setContext(nextContext);
     setTab(`create-${kind}`);
   };
 
   const goHome = () => {
+    setHistory([]);
     setContext(null);
     setTab('home');
+  };
+
+  const navigateTo = (nextTab, options = {}) => {
+    setHistory((items) => [{ tab, activeProjectId, activeSubjectId, activeMaterialId, gallery, context }, ...items].slice(0, 50));
+    if (options.projectId !== undefined) setActiveProjectId(options.projectId);
+    if (options.subjectId !== undefined) setActiveSubjectId(options.subjectId);
+    if (options.materialId !== undefined) setActiveMaterialId(options.materialId);
+    if (options.gallery !== undefined) setGallery(options.gallery);
+    if (options.context !== undefined) setContext(options.context);
+    setTab(nextTab);
+  };
+
+  const jumpTo = (nextTab) => {
+    setHistory([]);
+    setContext(null);
+    setTab(nextTab);
+  };
+
+  const goBack = () => {
+    const previous = history[0];
+    if (!previous) {
+      goHome();
+      return;
+    }
+    setHistory((items) => items.slice(1));
+    setContext(previous.context || null);
+    setGallery(previous.gallery || { type: 'all' });
+    setActiveProjectId(previous.activeProjectId || '');
+    setActiveSubjectId(previous.activeSubjectId || '');
+    setActiveMaterialId(previous.activeMaterialId || '');
+    setTab(previous.tab || 'home');
   };
 
   const commonProps = {
     data,
     refs,
     usage,
-    setTab,
+    setTab: navigateTo,
+    jumpTo,
+    goBack,
     openCreate,
     createProject,
     createSubject,
@@ -470,19 +506,19 @@ function App() {
         {tab === 'subjects' && <SubjectsScreen {...commonProps} activeSubjectId={activeSubjectId} />}
         {tab === 'search' && <SearchScreen {...commonProps} />}
         {tab === 'connections' && <ConnectionsScreen {...commonProps} />}
-        {tab === 'create-project' && <ProjectForm data={data} refs={refs} onSubmit={createProject} onCancel={() => setTab('projects')} />}
-        {tab === 'create-subject' && <SubjectCreateFlow data={data} refs={refs} usage={usage} onCreate={createSubject} createMaterial={createMaterial} onLink={linkExisting} context={context} setActiveSubjectId={setActiveSubjectId} setActiveMaterialId={setActiveMaterialId} setTab={setTab} onCancel={() => setTab(context?.type === 'project' ? 'projects' : 'subjects')} />}
-        {tab === 'create-material' && <MaterialFinder data={data} refs={refs} usage={usage} onCreate={createMaterial} onLink={linkExisting} context={context} onCancel={() => setTab(context?.type === 'project' ? 'projects' : 'subjects')} />}
+        {tab === 'create-project' && <ProjectForm data={data} refs={refs} onSubmit={createProject} onCancel={goBack} onBack={goBack} confirmBack />}
+        {tab === 'create-subject' && <SubjectCreateFlow data={data} refs={refs} usage={usage} onCreate={createSubject} createMaterial={createMaterial} onLink={linkExisting} context={context} setActiveSubjectId={setActiveSubjectId} setActiveMaterialId={setActiveMaterialId} setTab={navigateTo} onCancel={goBack} onBack={goBack} />}
+        {tab === 'create-material' && <MaterialFinder data={data} refs={refs} usage={usage} onCreate={createMaterial} onLink={linkExisting} context={context} onCancel={goBack} onBack={goBack} />}
       </main>
 
       {settingsOpen && <SettingsPanel data={data} setData={setData} addCategory={addCategory} renameCategory={renameCategory} deleteCategory={deleteCategory} renameTag={renameTag} deleteTag={deleteTag} onClose={() => setSettingsOpen(false)} />}
 
       <nav className="bottom-nav">
         <NavButton label="Home" icon={<Home />} active={tab === 'home'} onClick={goHome} />
-        <NavButton label="Add" icon={<CirclePlus />} active={tab === 'guided-add'} onClick={() => setTab('guided-add')} />
-        <NavButton label="Explore" icon={<Compass />} active={tab === 'explore'} onClick={() => setTab('explore')} />
-        <NavButton label="Search" icon={<Search />} active={tab === 'search'} onClick={() => setTab('search')} />
-        <NavButton label="Links" icon={<Network />} active={tab === 'connections'} onClick={() => setTab('connections')} />
+        <NavButton label="Add" icon={<CirclePlus />} active={tab === 'guided-add'} onClick={() => jumpTo('guided-add')} />
+        <NavButton label="Explore" icon={<Compass />} active={tab === 'explore'} onClick={() => jumpTo('explore')} />
+        <NavButton label="Search" icon={<Search />} active={tab === 'search'} onClick={() => jumpTo('search')} />
+        <NavButton label="Links" icon={<Network />} active={tab === 'connections'} onClick={() => jumpTo('connections')} />
       </nav>
     </div>
   );
@@ -595,6 +631,20 @@ function NavButton({ label, icon, active, onClick }) {
   return <button className={`nav-button ${active ? 'active' : ''}`} onClick={onClick}>{React.cloneElement(icon, { size: 21 })}<span>{label}</span></button>;
 }
 
+function BackButton({ onBack, confirmDiscard = false }) {
+  const [asking, setAsking] = useState(false);
+  if (asking) {
+    return <div className="discard-box">
+      <strong>Discard changes?</strong>
+      <div>
+        <button className="secondary-action compact" type="button" onClick={() => setAsking(false)}>Keep editing</button>
+        <button className="primary-action compact" type="button" onClick={onBack}>Discard</button>
+      </div>
+    </div>;
+  }
+  return <button className="back-button" type="button" onClick={() => (confirmDiscard ? setAsking(true) : onBack())}>← Back</button>;
+}
+
 function Panel({ title, icon, actions, children }) {
   return <section className="panel"><div className="panel-head"><h2>{React.cloneElement(icon, { size: 20 })}{title}</h2>{actions}</div>{children}</section>;
 }
@@ -640,11 +690,12 @@ const ADD_CHOICES = [
   { key: 'Study', label: 'Study', prompt: 'What study do you want to start?', project: true },
 ];
 
-function GuidedAddScreen({ data, refs, createProject, createSubject, createMaterial, setActiveProjectId, setActiveSubjectId, setActiveMaterialId, setTab, onDone }) {
+function GuidedAddScreen({ data, refs, createProject, createSubject, createMaterial, setActiveProjectId, setActiveSubjectId, setActiveMaterialId, setTab, goBack, onDone }) {
   const [choiceKey, setChoiceKey] = useState('');
   const choice = ADD_CHOICES.find((item) => item.key === choiceKey);
 
   return <section className="screen-stack">
+    <BackButton onBack={choice ? () => setChoiceKey('') : goBack} confirmDiscard={Boolean(choice)} />
     <Panel title="Add to My Study" icon={<CirclePlus />}>
       {!choice ? (
         <div className="choice-grid">
@@ -869,6 +920,7 @@ function AddToTopicPanel({ topic, data, createSubject, createMaterial, setActive
   const [choice, setChoice] = useState('');
   return <div className="topic-add-panel">
     {!choice ? <>
+      <BackButton onBack={onClose} />
       <h3>Add to {topic.name}</h3>
       <div className="choice-grid compact-choice-grid">
         {TOPIC_ADD_CHOICES.map((item) => <button key={item} className="choice-card" type="button" onClick={() => setChoice(item)}>{item}</button>)}
@@ -973,7 +1025,7 @@ function AddToTopicForm({ choice, topic, data, createSubject, createMaterial, se
   };
 
   return <form className="guided-form" onSubmit={save}>
-    <button className="text-button" type="button" onClick={onBack}>Back to choices</button>
+    <BackButton onBack={onBack} confirmDiscard />
     {duplicate && <DuplicateTopicNotice
       topic={duplicate}
       onOpen={() => {
@@ -1049,7 +1101,7 @@ function ExploreScreen({ data, refs, usage, setTab, setActiveProjectId, setActiv
   </section>;
 }
 
-function PictureGalleryScreen({ data, refs, gallery, setTab, setActiveMaterialId }) {
+function PictureGalleryScreen({ data, refs, gallery, setTab, setActiveMaterialId, goBack }) {
   const scope = gallery || { type: 'all' };
   const subject = scope.type === 'subject' ? refs.subjects[scope.id] : null;
   const project = scope.type === 'project' ? refs.projects[scope.id] : null;
@@ -1069,6 +1121,7 @@ function PictureGalleryScreen({ data, refs, gallery, setTab, setActiveMaterialId
   }, {});
 
   return <section className="screen-stack">
+    <BackButton onBack={goBack} />
     <Panel title="View Pictures" icon={<ImagePlus />} actions={<button className="small-action" onClick={() => setTab('explore')}>Explore</button>}>
       {Object.keys(groups).length ? Object.entries(groups).map(([name, items]) => (
         <div key={name} className="gallery-group">
@@ -1091,9 +1144,10 @@ function PictureGalleryScreen({ data, refs, gallery, setTab, setActiveMaterialId
   </section>;
 }
 
-function MaterialDetailScreen({ data, refs, usage, activeMaterialId, updateMaterial, deleteMaterial, setTab, setGallery }) {
+function MaterialDetailScreen({ data, refs, usage, activeMaterialId, updateMaterial, deleteMaterial, setTab, setGallery, goBack }) {
   const material = data.materials.find((item) => item.id === activeMaterialId) || data.materials[0];
   return <section className="screen-stack">
+    <BackButton onBack={goBack} />
     <Panel title="Note" icon={<FileText />} actions={<button className="small-action" onClick={() => setTab('explore')}>Explore</button>}>
       {material ? <MaterialCard material={material} data={data} refs={refs} usage={usage} onUpdate={updateMaterial} onDelete={deleteMaterial} onPictureOpen={() => { setGallery({ type: 'material', id: material.id }); setTab('picture-gallery'); }} /> : <Empty text="No notes yet." />}
     </Panel>
@@ -1101,7 +1155,7 @@ function MaterialDetailScreen({ data, refs, usage, activeMaterialId, updateMater
 }
 
 function ProjectsScreen(props) {
-  const { data, refs, usage, activeProjectId, setActiveProjectId, openCreate, updateProject, deleteProject, setActiveSubjectId, setActiveMaterialId, setTab, setGallery } = props;
+  const { data, refs, usage, activeProjectId, setActiveProjectId, openCreate, updateProject, deleteProject, setActiveSubjectId, setActiveMaterialId, setTab, setGallery, goBack } = props;
   const active = data.projects.find((project) => project.id === activeProjectId) || data.projects[0];
   const [editing, setEditing] = useState(false);
   useEffect(() => setEditing(false), [active?.id]);
@@ -1122,15 +1176,15 @@ function ProjectsScreen(props) {
     </aside>
     <section className="panel detail-panel">
       {!active ? <Empty text="Select or start a study." /> : editing ? (
-        <ProjectForm data={data} refs={refs} project={active} onSubmit={(values) => { updateProject(active.id, values); setEditing(false); }} onCancel={() => setEditing(false)} />
+        <ProjectForm data={data} refs={refs} project={active} onSubmit={(values) => { updateProject(active.id, values); setEditing(false); }} onCancel={() => setEditing(false)} onBack={() => setEditing(false)} confirmBack />
       ) : (
-        <ProjectDetail project={active} data={data} refs={refs} usage={usage} openCreate={openCreate} updateMaterial={props.updateMaterial} deleteMaterial={props.deleteMaterial} onEdit={() => setEditing(true)} onDelete={() => { if (confirm('Delete this study? Topics and notes will remain.')) deleteProject(active.id); }} setActiveSubjectId={setActiveSubjectId} setActiveMaterialId={setActiveMaterialId} setTab={setTab} setGallery={setGallery} />
+        <ProjectDetail project={active} data={data} refs={refs} usage={usage} openCreate={openCreate} updateMaterial={props.updateMaterial} deleteMaterial={props.deleteMaterial} onEdit={() => setEditing(true)} onDelete={() => { if (confirm('Delete this study? Topics and notes will remain.')) deleteProject(active.id); }} setActiveSubjectId={setActiveSubjectId} setActiveMaterialId={setActiveMaterialId} setTab={setTab} setGallery={setGallery} goBack={goBack} />
       )}
     </section>
   </section>;
 }
 
-function ProjectDetail({ project, data, refs, usage, openCreate, updateMaterial, deleteMaterial, onEdit, onDelete, setActiveSubjectId, setActiveMaterialId, setTab, setGallery }) {
+function ProjectDetail({ project, data, refs, usage, openCreate, updateMaterial, deleteMaterial, onEdit, onDelete, setActiveSubjectId, setActiveMaterialId, setTab, setGallery, goBack }) {
   const subjects = (project.subjectIds || []).map((id) => refs.subjects[id]).filter(Boolean);
   const materials = (project.materialIds || []).map((id) => refs.materials[id]).filter(Boolean);
   const questions = materials.filter((item) => item.type === 'Research Question');
@@ -1138,6 +1192,7 @@ function ProjectDetail({ project, data, refs, usage, openCreate, updateMaterial,
   const pictureMaterials = picturesForProject(data, project);
   const openProjectPictures = () => { setGallery({ type: 'project', id: project.id }); setTab('picture-gallery'); };
   return <>
+    <BackButton onBack={goBack} />
     <DetailHeader title={project.name} subtitle={`${subjects.length} ${plural('topic', subjects.length)} · ${materials.length} ${plural('note', materials.length)}`} onEdit={onEdit} onDelete={onDelete} />
     <TagRow ids={project.tagIds} refs={refs} />
     <SectionTitle text="Overview" />
@@ -1147,7 +1202,7 @@ function ProjectDetail({ project, data, refs, usage, openCreate, updateMaterial,
       <ImagePreviewGroup images={pictureMaterials} onOpen={openProjectPictures} />
     </>}
     <SectionTitle text="Topics" actions={<button className="small-action" onClick={() => openCreate('subject', { type: 'project', id: project.id })}><CirclePlus size={16} /> Add Topic</button>} />
-    {subjects.length ? subjects.map((subject) => <SubjectCard key={subject.id} subject={subject} refs={refs} usage={usage} pictures={picturesForSubject(data, subject)} onPicturesOpen={() => { setGallery({ type: 'subject', id: subject.id }); setTab('picture-gallery'); }} onOpen={() => setActiveSubjectId(subject.id)} />) : <Empty text="No topics yet." />}
+    {subjects.length ? subjects.map((subject) => <SubjectCard key={subject.id} subject={subject} refs={refs} usage={usage} pictures={picturesForSubject(data, subject)} onPicturesOpen={() => { setGallery({ type: 'subject', id: subject.id }); setTab('picture-gallery'); }} onOpen={() => { setActiveSubjectId(subject.id); setTab('subjects'); }} />) : <Empty text="No topics yet." />}
     <SectionTitle text="Notes" actions={<button className="small-action" onClick={() => openCreate('material', { type: 'project', id: project.id })}><CirclePlus size={16} /> Add Note</button>} />
     {noteMaterials.length ? noteMaterials.map((material) => <MaterialCard key={material.id} material={material} data={data} refs={refs} usage={usage} onUpdate={updateMaterial} onDelete={deleteMaterial} onOpen={() => { setActiveMaterialId(material.id); setTab('material-detail'); }} onPictureOpen={() => { setGallery({ type: 'material', id: material.id }); setTab('picture-gallery'); }} />) : <Empty text="No notes yet." />}
     <SectionTitle text="Questions" />
@@ -1158,7 +1213,7 @@ function ProjectDetail({ project, data, refs, usage, openCreate, updateMaterial,
 }
 
 function SubjectsScreen(props) {
-  const { data, refs, usage, activeSubjectId, setActiveSubjectId, openCreate, updateSubject, deleteSubject, setGallery, setTab } = props;
+  const { data, refs, usage, activeSubjectId, setActiveSubjectId, openCreate, updateSubject, deleteSubject, setGallery, setTab, goBack } = props;
   const [filter, setFilter] = useState('All');
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState(false);
@@ -1185,7 +1240,7 @@ function SubjectsScreen(props) {
     </aside>
     <section className="panel detail-panel">
       {!active ? <Empty text="Select or add a topic." /> : editing ? (
-        <SubjectForm data={data} refs={refs} subject={active} usage={usage} onSubmit={(values) => { updateSubject(active.id, values); setEditing(false); }} onCancel={() => setEditing(false)} />
+        <SubjectForm data={data} refs={refs} subject={active} usage={usage} onSubmit={(values) => { updateSubject(active.id, values); setEditing(false); }} onCancel={() => setEditing(false)} onBack={() => setEditing(false)} confirmBack />
       ) : (
         <SubjectDetail
           subject={active}
@@ -1201,6 +1256,7 @@ function SubjectsScreen(props) {
           setActiveMaterialId={props.setActiveMaterialId}
           setTab={props.setTab}
           setGallery={props.setGallery}
+          goBack={goBack}
           onEdit={() => setEditing(true)}
           onDelete={() => { if (confirm('Delete this topic? Studies and notes will remain.')) deleteSubject(active.id); }}
         />
@@ -1209,7 +1265,7 @@ function SubjectsScreen(props) {
   </section>;
 }
 
-function SubjectDetail({ subject, data, refs, usage, openCreate, createSubject, createMaterial, updateMaterial, deleteMaterial, setActiveSubjectId, setActiveMaterialId, setTab, setGallery, onEdit, onDelete }) {
+function SubjectDetail({ subject, data, refs, usage, openCreate, createSubject, createMaterial, updateMaterial, deleteMaterial, setActiveSubjectId, setActiveMaterialId, setTab, setGallery, goBack, onEdit, onDelete }) {
   const [adding, setAdding] = useState(false);
   const projects = data.projects.filter((project) => (project.subjectIds || []).includes(subject.id) || (subject.linkedProjectIds || []).includes(project.id));
   const linkedSubjects = unique([...(subject.linkedSubjectIds || []), ...data.subjects.filter((other) => (other.linkedSubjectIds || []).includes(subject.id)).map((other) => other.id)])
@@ -1220,6 +1276,7 @@ function SubjectDetail({ subject, data, refs, usage, openCreate, createSubject, 
   const openSubjectPictures = () => { setGallery({ type: 'subject', id: subject.id }); setTab('picture-gallery'); };
 
   return <>
+    <BackButton onBack={goBack} />
     <DetailHeader title={subject.name} subtitle={subject.type} badge={subjectUsageLabel(usage.subjects[subject.id])} onEdit={onEdit} onDelete={onDelete} />
     <button className="primary-action topic-add-button" onClick={() => setAdding(true)}><CirclePlus /> Add to {subject.name}</button>
     {adding && <AddToTopicPanel
@@ -1335,13 +1392,14 @@ function ConnectionList({ connections }) {
   return <div className="connection-list">{connections.map((item, index) => <article className="connection-card" key={`${item.type}-${item.title}-${index}`}><strong>{item.title}</strong><span>{item.type}</span>{item.detail && <p>{item.detail}</p>}</article>)}</div>;
 }
 
-function ProjectForm({ data, refs, project, onSubmit, onCancel }) {
+function ProjectForm({ data, refs, project, onSubmit, onCancel, onBack, confirmBack = false }) {
   const [name, setName] = useState(project?.name || '');
   const [description, setDescription] = useState(project?.description || '');
   const [tags, setTags] = useState(tagText(project?.tagIds, refs));
   const [subjectIds, setSubjectIds] = useState(project?.subjectIds || []);
   const [materialIds, setMaterialIds] = useState(project?.materialIds || []);
   return <form className="form-card" onSubmit={(event) => { event.preventDefault(); if (!name.trim()) return; onSubmit({ name, description, tags, subjectIds, materialIds }); }}>
+    {onBack && <BackButton onBack={onBack} confirmDiscard={confirmBack} />}
     <h2><FolderOpen size={22} />{project ? 'Edit Study' : 'Start Study'}</h2>
     <label>Study name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Example: First-century travel" required /></label>
     <label>Description<textarea value={description} onChange={(event) => setDescription(event.target.value)} /></label>
@@ -1352,7 +1410,7 @@ function ProjectForm({ data, refs, project, onSubmit, onCancel }) {
   </form>;
 }
 
-function SubjectCreateFlow({ data, refs, usage, onCreate, createMaterial, onLink, context, setActiveSubjectId, setActiveMaterialId, setTab, onCancel }) {
+function SubjectCreateFlow({ data, refs, usage, onCreate, createMaterial, onLink, context, setActiveSubjectId, setActiveMaterialId, setTab, onCancel, onBack }) {
   const [type, setType] = useState(SUBJECT_TYPES[0]);
   const [name, setName] = useState('');
   const [addingToDuplicate, setAddingToDuplicate] = useState(false);
@@ -1360,6 +1418,7 @@ function SubjectCreateFlow({ data, refs, usage, onCreate, createMaterial, onLink
   const exact = data.subjects.find((subject) => subject.type === type && name.trim() && norm(subject.name) === norm(name));
   return <section className="screen-stack">
     <div className="form-card">
+      {onBack && <BackButton onBack={onBack} confirmDiscard />}
       <h2><BookOpen size={22} />Add Topic</h2>
       <label>Topic type<select value={type} onChange={(event) => setType(event.target.value)}>{SUBJECT_TYPES.map((item) => <option key={item}>{item}</option>)}</select></label>
       <label>Topic name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Type a name, like Peter or Petra" autoFocus /></label>
@@ -1387,7 +1446,7 @@ function SubjectCreateFlow({ data, refs, usage, onCreate, createMaterial, onLink
   </section>;
 }
 
-function SubjectForm({ data, refs, subject = {}, usage, onSubmit, onCancel, submitText = 'Save Topic' }) {
+function SubjectForm({ data, refs, subject = {}, usage, onSubmit, onCancel, onBack, confirmBack = false, submitText = 'Save Topic' }) {
   const [type, setType] = useState(subject.type || SUBJECT_TYPES[0]);
   const [name, setName] = useState(subject.name || '');
   const [categoryId, setCategoryId] = useState(subject.categoryId || '');
@@ -1407,6 +1466,7 @@ function SubjectForm({ data, refs, subject = {}, usage, onSubmit, onCancel, subm
   });
   const shared = subject.id && isSharedSubject(usage.subjects[subject.id]);
   return <form className="form-card" onSubmit={(event) => { event.preventDefault(); if (!type || !name.trim()) return; onSubmit({ type, name, categoryId, description, tags, linkedProjectIds, linkedSubjectIds, materialIds, fields, progressStatus }); }}>
+    {onBack && <BackButton onBack={onBack} confirmDiscard={confirmBack} />}
     <h2><BookOpen size={22} />{subject.id ? 'Edit Topic' : 'Create Topic'}</h2>
     {shared && <SharedNotice />}
     <label>Type<select value={type} onChange={(event) => setType(event.target.value)}>{SUBJECT_TYPES.map((item) => <option key={item}>{item}</option>)}</select></label>
@@ -1431,11 +1491,12 @@ function SubjectForm({ data, refs, subject = {}, usage, onSubmit, onCancel, subm
   </form>;
 }
 
-function MaterialFinder({ data, refs, usage, onCreate, onLink, context, onCancel }) {
+function MaterialFinder({ data, refs, usage, onCreate, onLink, context, onCancel, onBack }) {
   const [query, setQuery] = useState('');
   const matches = data.materials.filter((material) => query.trim() && includes(`${material.title} ${material.body} ${material.scriptureRefs}`, query)).slice(0, 6);
   return <section className="screen-stack">
     <div className="form-card">
+      {onBack && <BackButton onBack={onBack} confirmDiscard />}
       <h2><FileText size={22} />Add Note</h2>
       <label>Find existing note<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search title, note text, or scripture" autoFocus /></label>
       {matches.length > 0 && <div className="match-list">{matches.map((material) => <button type="button" key={material.id} onClick={() => { onLink('material', material.id, context); onCancel(); }}><strong>{titleOf(material)}</strong><small>{material.type} - {materialUsageLabel(usage.materials[material.id])}</small></button>)}</div>}
@@ -1444,7 +1505,7 @@ function MaterialFinder({ data, refs, usage, onCreate, onLink, context, onCancel
   </section>;
 }
 
-function MaterialForm({ data, refs, usage, material = {}, onSubmit, onCancel, submitText = 'Save Note' }) {
+function MaterialForm({ data, refs, usage, material = {}, onSubmit, onCancel, onBack, confirmBack = false, submitText = 'Save Note' }) {
   const [type, setType] = useState(material.type || 'Note');
   const [title, setTitle] = useState(material.title || '');
   const [body, setBody] = useState(material.body || '');
@@ -1463,6 +1524,7 @@ function MaterialForm({ data, refs, usage, material = {}, onSubmit, onCancel, su
     reader.readAsDataURL(file);
   };
   return <form className="form-card" onSubmit={(event) => { event.preventDefault(); if (!title.trim()) return; onSubmit({ type, title, body, imageData, source, scriptureRefs, personalTakeaway, tags, linkedProjectIds, linkedSubjectIds }); }}>
+    {onBack && <BackButton onBack={onBack} confirmDiscard={confirmBack} />}
     <h2><FileText size={22} />{material.id ? 'Edit Note' : 'Create Note'}</h2>
     {shared && <SharedNotice />}
     <label>Note type<select value={type} onChange={(event) => setType(event.target.value)}>{MATERIAL_TYPES.map((item) => <option key={item}>{item}</option>)}</select></label>
@@ -1546,6 +1608,8 @@ function MaterialCard({ material, data, refs, usage, onOpen, onPictureOpen, onUp
         setEditing(false);
       }}
       onCancel={() => setEditing(false)}
+      onBack={() => setEditing(false)}
+      confirmBack
     />;
   }
   const content = <>
@@ -1636,6 +1700,7 @@ function SettingsPanel({ data, setData, addCategory, renameCategory, deleteCateg
   };
   return <div className="modal-backdrop">
     <section className="settings-panel">
+      <BackButton onBack={onClose} />
       <div className="panel-head"><h2><Settings size={22} />Settings</h2><button className="icon-button" onClick={onClose} title="Close"><X size={18} /></button></div>
       <Panel title="Manage Categories" icon={<Boxes />}>
         <form className="inline-form" onSubmit={(event) => { event.preventDefault(); addCategory(newCategory); setNewCategory(''); }}><input value={newCategory} onChange={(event) => setNewCategory(event.target.value)} placeholder="Find or create category" /><button>Add</button></form>
